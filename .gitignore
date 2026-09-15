@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Trained checkpoints (large binaries; regenerate with train.py / run_experiments.py)
+checkpoints/
+
+# HF datasets cache, if ever pointed at the repo
+.cache/
+
+# Logs / scratch
+*.log
+
+# OS
+.DS_Store

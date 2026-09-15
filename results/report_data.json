@@ -1,0 +1,95 @@
+{
+  "generated_at": "2026-09-15T19:30:00",
+  "metadata": {
+    "environment": {
+      "device": "mps",
+      "torch_version": "2.4.0",
+      "python_version": "3.12.4",
+      "platform": "macOS-27.0-arm64-arm-64bit (Apple M1 Pro, 16 GB RAM)"
+    },
+    "data": {
+      "num_train_stories": 8000,
+      "num_val_stories": 2000,
+      "train_tokens": 1952319,
+      "val_tokens": 450301,
+      "vocab_size": 1000,
+      "num_merges": 910,
+      "unk_token": "<unk>"
+    },
+    "training": {
+      "block_size": 128,
+      "batch_size": 32,
+      "learning_rate": 0.0003,
+      "max_steps": 3000,
+      "dropout": 0.1,
+      "optimizer": "AdamW (PyTorch defaults except lr: betas=(0.9,0.999), eps=1e-8, weight_decay=0.01)",
+      "gradient_clipping": null,
+      "random_seed": null,
+      "note": "No torch.manual_seed() call exists in the training/experiment path, and get_batch() draws unseeded random windows -- every run and every variant sees a different batch sequence, and each configuration below is trained exactly once (no repeats)."
+    },
+    "peft": {
+      "max_steps": 500,
+      "base_model": "large_1.7M",
+      "lora_target_modules": ["attn.qkv_proj", "attn.out_proj", "ff.net[0]", "ff.net[2]"],
+      "lora_alpha_formula": "alpha = 2 * r for every rank tested",
+      "lora_dropout": 0.0,
+      "identical_init": "every variant is a deepcopy() of the same trained base model instance"
+    },
+    "latency": {
+      "prompt_len": 10,
+      "gen_lengths": [20, 50, 100],
+      "num_repeats": 3,
+      "decoding": "sampling (temperature=0.8, top_k=50)",
+      "synchronized_timing": "torch.mps.synchronize()/torch.cuda.synchronize() called before both the start and end of the timed region",
+      "peak_memory_measured": false
+    }
+  },
+  "unigram_baseline_perplexity": 589.63,
+  "scaling": [
+    {
+      "name": "small_1M", "embed_dim": 132, "num_layers": 4, "num_heads": 4, "params": 992376,
+      "train_time_sec": 265.6, "checkpoint": "checkpoints/checkpoint_small_1M.pt",
+      "val_loss": 3.2508, "val_perplexity": 25.81, "bits_per_char": 1.3337,
+      "top1_accuracy": 0.2904, "top5_accuracy": 0.5552
+    },
+    {
+      "name": "medium_1.35M", "embed_dim": 126, "num_layers": 6, "num_heads": 6, "params": 1295280,
+      "train_time_sec": 334.0, "checkpoint": "checkpoints/checkpoint_medium_1.35M.pt",
+      "val_loss": 3.1576, "val_perplexity": 23.51, "bits_per_char": 1.2954,
+      "top1_accuracy": 0.3082, "top5_accuracy": 0.5737
+    },
+    {
+      "name": "large_1.7M", "embed_dim": 128, "num_layers": 8, "num_heads": 8, "params": 1730816,
+      "train_time_sec": 407.3, "checkpoint": "checkpoints/checkpoint_large_1.7M.pt",
+      "val_loss": 3.0827, "val_perplexity": 21.82, "bits_per_char": 1.2647,
+      "top1_accuracy": 0.3207, "top5_accuracy": 0.5879
+    }
+  ],
+  "peft": {
+    "base_model": "large_1.7M",
+    "variants": [
+      {"name": "baseline_pretrained", "trainable_params": 0, "total_params": 1730816, "trainable_pct": 0.00, "val_loss": 3.0827, "val_perplexity": 21.82, "train_time_sec": 0.0},
+      {"name": "lora_r4", "trainable_params": 65536, "total_params": 1795072, "trainable_pct": 3.65, "val_loss": 3.0352, "val_perplexity": 20.80, "train_time_sec": 123.9},
+      {"name": "lora_r8", "trainable_params": 131072, "total_params": 1861632, "trainable_pct": 7.04, "val_loss": 3.0288, "val_perplexity": 20.67, "train_time_sec": 116.8},
+      {"name": "lora_r16", "trainable_params": 262144, "total_params": 1994752, "trainable_pct": 13.15, "val_loss": 3.0194, "val_perplexity": 20.48, "train_time_sec": 111.1},
+      {"name": "full_finetune", "trainable_params": 1730816, "total_params": 1730816, "trainable_pct": 100.00, "val_loss": 2.9738, "val_perplexity": 19.57, "train_time_sec": 81.8}
+    ]
+  },
+  "latency": {
+    "small_1M": [
+      {"gen_len": 20, "no_cache_sec": 0.3736, "cache_sec": 0.4409, "speedup": 0.85},
+      {"gen_len": 50, "no_cache_sec": 1.0332, "cache_sec": 1.0784, "speedup": 0.96},
+      {"gen_len": 100, "no_cache_sec": 1.8274, "cache_sec": 1.8835, "speedup": 0.97}
+    ],
+    "medium_1.35M": [
+      {"gen_len": 20, "no_cache_sec": 0.4483, "cache_sec": 0.4188, "speedup": 1.07},
+      {"gen_len": 50, "no_cache_sec": 0.9998, "cache_sec": 1.2627, "speedup": 0.79},
+      {"gen_len": 100, "no_cache_sec": 2.7093, "cache_sec": 2.8394, "speedup": 0.95}
+    ],
+    "large_1.7M": [
+      {"gen_len": 20, "no_cache_sec": 0.5985, "cache_sec": 0.6179, "speedup": 0.97},
+      {"gen_len": 50, "no_cache_sec": 1.7828, "cache_sec": 1.6845, "speedup": 1.06},
+      {"gen_len": 100, "no_cache_sec": 3.0879, "cache_sec": 2.5904, "speedup": 1.19}
+    ]
+  }
+}
