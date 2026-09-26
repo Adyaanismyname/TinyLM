@@ -1,120 +1,107 @@
 # TinyLLM experiment report
 
-Generated 2026-09-15 19:30. Unigram frequency baseline perplexity: 589.63 (reference floor -- every model below should land well under this).
+Regenerated 2026-09-26 from `results/runs/{e1,e2,e3,e4,e5}/*.json` (the per-run
+files are the source of truth; this file only summarizes them). The paper
+(`tinyLmPaper.latex`) is the full write-up. All runs: NVIDIA GeForce RTX 3050
+6GB Laptop GPU, PyTorch 2.5.1, block_size 512, batch 32 (E1–E3) or 16 (E4–E5),
+AdamW with warmup+cosine, dropout 0.1, vocab 1,024 (word-level BPE).
 
-## 0. Experimental controls
+Data: TinyStories train 904.5M tokens / dev 4.27M / test 9.17M;
+TinyStoriesInstruct train 153.5M / dev 2.60M / test 2.48M (loss masked to
+story tokens). Test metrics are computed over fixed prefixes: first 2M test
+tokens (E1, E2) and first 1M tokens of each test set (E3).
 
-What keeps the comparisons below apples-to-apples:
+## E1 — data scaling at a fixed 100M-token budget (1.78M model, 3 seeds)
 
-- **One shared tokenizer/dataset.** `build_dataset()` runs once; the same BPE vocab and the same train/val token streams are reused for every model size and every PEFT variant, so tokenization is never a confound between rows.
-- **Scaling isolates parameter count.** `num_layers`/`num_heads` are set directly per config; `embed_dim` is solved (`resolve_embed_dim`) to hit each target parameter count. Learning rate, batch size, step count, eval cadence, and dropout are identical across all three sizes -- only capacity varies.
-- **Exact, non-sampled evaluation.** Val loss/perplexity/accuracy/bits-per-char are computed over *every* window of the validation set (`metrics.perplexity` / `topk_accuracy`), not random sampled batches like the training-time progress printouts -- so these numbers are deterministic for a given model, not noise from one lucky batch.
-- **Two reference floors, not just relative comparisons.** The unigram frequency baseline above is the weakest reasonable model; `baseline_pretrained` in the PEFT table is the base checkpoint with *zero* additional training. Every other row's improvement is measured against actually doing nothing, not just against each other.
-- **PEFT rows differ in exactly one variable.** Every variant (`lora_r4/r8/r16`, `full_finetune`) starts from an identical deep copy of the same pretrained base model, trains on identical data, for the identical step budget (`PEFT_MAX_STEPS`). The only thing that changes between rows is which/how many parameters are trainable -- that's what the trainable-param and %-of-total columns are for.
-- **KV cache: verified correctness, not just speed.** `model.py`'s cached and non-cached generation paths are checked (in `model.py`'s own smoke test) to produce bit-for-bit identical sampled tokens given the same seed, so the latency numbers below measure pure speed, not a behavior change. Each timing excludes one warmup generation (lazy setup shouldn't count) and averages 3 repeats.
+| unique tokens | epochs | test ppl (mean ± 95% CI) |
+|---|---|---|
+| 2M | 50.0 | 5.29 ± 0.05 |
+| 8M | 12.5 | 5.20 ± 0.03 |
+| 32M | 3.1 | 5.18 ± 0.08 |
+| 100M | 1.0 | 5.19 ± 0.03 |
 
-## 1. Scaling: does more parameters actually help?
+Nearly all the benefit of fresh data arrives by 8M unique tokens; even 50
+epochs over a 2M pool costs only ~2% perplexity.
 
-| model | layers | heads | embed_dim | params | val loss | val ppl | bits/char | top-1 acc | top-5 acc | train time (s) |
-|---|---|---|---|---|---|---|---|---|---|---|
-| small_1M | 4 | 4 | 132 | 992,376 | 3.2508 | 25.81 | 1.3337 | 29.04% | 55.52% | 265.6 |
-| medium_1.35M | 6 | 6 | 126 | 1,295,280 | 3.1576 | 23.51 | 1.2954 | 30.82% | 57.37% | 334.0 |
-| large_1.7M | 8 | 8 | 128 | 1,730,816 | 3.0827 | 21.82 | 1.2647 | 32.07% | 58.79% | 407.3 |
+## E2 — model scaling (200M tokens, one pass, LR swept per size, 3 seeds)
 
-## 2. PEFT: LoRA vs full fine-tuning (base model: large_1.7M)
-
-| variant | trainable params | % of total | val loss | val ppl | train time (s) |
+| layers | width | params | best LR | test loss ± CI | ppl |
 |---|---|---|---|---|---|
-| baseline_pretrained | 0 | 0.00% | 3.0827 | 21.82 | 0.0 |
-| lora_r4 | 65,536 | 3.65% | 3.0352 | 20.80 | 123.9 |
-| lora_r8 | 131,072 | 7.04% | 3.0288 | 20.67 | 116.8 |
-| lora_r16 | 262,144 | 13.15% | 3.0194 | 20.48 | 111.1 |
-| full_finetune | 1,730,816 | 100.00% | 2.9738 | 19.57 | 81.8 |
+| 2 | 32 | 74,624 | 3e-3 | 2.322 ± 0.025 | 10.20 |
+| 4 | 64 | 298,368 | 3e-3 | 1.702 ± 0.086 | 5.48 |
+| 6 | 96 | 818,688 | 3e-3 | 1.348 ± 0.002 | 3.85 |
+| 8 | 128 | 1,783,040 | 1e-3 | 1.225 ± 0.003 | 3.40 |
+| 10 | 160 | 3,338,880 | 3e-3 | 1.089 ± 0.004 | 2.97 |
+| 12 | 192 | 5,633,664 | 1e-3 | 1.045 ± 0.004 | 2.84 |
+| 14 | 224 | 8,814,848 | 1e-3 | 0.995 ± 0.005 | 2.70 |
 
-## 3. KV-cache generation latency
+Power-law fit on seed means: L = 0.71 + 103.7·N^−0.37 (bootstrap 95% CI for
+the exponent: 0.22–0.57).
 
+## E3 — LoRA vs. full fine-tuning on TinyStoriesInstruct (base: E2 8-layer seed 0; 20M tokens, 5 seeds)
 
-### small_1M
+| arm | trainable (% of base) | LR | Instruct ppl | TinyStories ppl (forgetting) | Words rate | train time |
+|---|---|---|---|---|---|---|
+| baseline (frozen) | 0 | – | 3.650 | 3.398 | 0.0% | 0s |
+| lora_r1 | 16,384 (0.9%) | 1e-2 | 3.287 | 3.444 | 0.6% | 306s |
+| lora_r2 | 32,768 (1.8%) | 1e-2 | 3.268 | 3.447 | 0.6% | 313s |
+| lora_r4 | 65,536 (3.7%) | 1e-2 | 3.256 | 3.449 | 0.6% | 313s |
+| lora_r8 | 131,072 (7.3%) | 1e-2 | 3.250 | 3.453 | 1.3% | 312s |
+| lora_r16 | 262,144 (14.7%) | 3e-3 | 3.230 | 3.444 | 1.9% | 308s |
+| lora_r32 | 524,288 (29.4%) | 3e-3 | 3.221 | 3.447 | 1.7% | 317s |
+| lora_r64 | 1,048,576 (58.8%) | 1e-3 | 3.211 | 3.442 | 1.8% | 323s |
+| full fine-tune | 1,783,040 (100%) | 3e-4 | 3.201 | 3.474 | 1.4% | 254s |
 
-| gen length | no cache (s) | cached (s) | speedup |
+LoRA r16 closes ~94% of the baseline→full-FT perplexity gap with 14.7% of the
+trainable parameters; full fine-tuning wins perplexity but forgets the most.
+Words-constraint following barely moves for any arm (reference-story ceiling:
+92.8%). LoRA is 20–27% slower in wall-clock at this width — see E4. LoRA arms
+were merged (`merge_lora`) before evaluation, so final architectures are
+identical to full fine-tuning.
+
+## E4 — LoRA vs. full fine-tuning step time vs. width (8 layers, batch 16, 200 timed steps × 5 repeats, random weights/tokens)
+
+| width | params | full | lora_r8 | lora_r64 |
+|---|---|---|---|---|
+| 64 | 0.50M | 0.108s | 0.121s | 0.127s |
+| 128 | 1.78M | 0.218s | 0.238s | 0.248s |
+| 256 | 6.71M | 0.765s | 0.742s | 0.765s |
+| 512 | 26.0M | 1.046s | 1.157s | 1.277s |
+| 1024 | 102.3M | 5.040s | 2.737s (1.84x) | 3.061s (1.65x) |
+
+LoRA is slower below the crossover (~width 512) and clearly faster at width
+1024. Repeat-to-repeat thermal drift is visible at width 1024; medians are
+reported.
+
+## E5 — KV-cache latency (1.78M model, greedy, 16-token prompt, 10 repeats, random weights/tokens)
+
+Batch 16, median seconds (speedup vs. no cache):
+
+| gen tokens | no cache | concat | prealloc |
 |---|---|---|---|
-| 20 | 0.3736 | 0.4409 | 0.85x |
-| 50 | 1.0332 | 1.0784 | 0.96x |
-| 100 | 1.8274 | 1.8835 | 0.97x |
+| 20 | 0.140 | 0.139 (1.01x) | 0.162 (0.86x) |
+| 50 | 0.342 | 0.257 (1.33x) | 0.320 (1.07x) |
+| 100 | 0.588 | 0.622 (0.94x) | 0.722 (0.81x) |
+| 250 | 1.911 | 1.795 (1.06x) | 1.437 (1.33x) |
+| 490 | 6.348 | 3.428 (1.85x) | 3.390 (1.87x) |
 
-### medium_1.35M
+Batch 1 shows no reliable benefit at any length tested. Peak memory at batch
+16: no-cache grows 30→108MB with generation length; prealloc constant 93.4MB
+(KV tensors: 66MB at 490 tokens).
 
-| gen length | no cache (s) | cached (s) | speedup |
-|---|---|---|---|
-| 20 | 0.4483 | 0.4188 | 1.07x |
-| 50 | 0.9998 | 1.2627 | 0.79x |
-| 100 | 2.7093 | 2.8394 | 0.95x |
+## Samples
 
-### large_1.7M
+`results/samples/samples.md` has unfiltered generations from the E3 seed-0
+models (recreated checkpoints reproduce their stored Instruct perplexities to
+three decimals). Headline: fine-tuned arms adopt the story genre and pick up
+prompt entities, but explicit word constraints are mostly ignored — matching
+the Words-rate numbers above.
 
-| gen length | no cache (s) | cached (s) | speedup |
-|---|---|---|---|
-| 20 | 0.5985 | 0.6179 | 0.97x |
-| 50 | 1.7828 | 1.6845 | 1.06x |
-| 100 | 3.0879 | 2.5904 | 1.19x |
+## Known limitations of this data
 
-## Appendix: answers to the write-up's [TO ADD] items
-
-Pulled by inspecting this run's saved checkpoint (`checkpoints/checkpoint_small_1M.pt`, whose tokenizer is shared across every experiment) and this machine's environment. Organized by the section each `\toadd{}` appears in.
-
-**Author / affiliation** -- not something this can answer; fill in directly.
-
-**Dataset (Section: Dataset)**
-- Stories used: 8,000 training stories, 2,000 validation stories (`dataset.build_dataset(num_train=8000, num_val=2000)`), taken as a fixed prefix of TinyStories' `train`/`validation` splits (not shuffled).
-- Full TinyStories corpus for reference: ~2.12M train stories / ~21.99K validation stories -- this run used ~0.38% of train and ~9.1% of validation.
-- Preprocessing (`dataset.preprocess_text`): (1) Unicode NFKC normalization, (2) drop any character that is neither printable nor whitespace, (3) collapse repeated whitespace to a single space, (4) strip leading/trailing whitespace. No truncation, length filtering, or deduplication.
-
-**Tokenization (Section: Tokenization)**
-- Implementation: from-scratch, pure-Python BPE (`BPE.py`) -- not a library (no `tokenizers`/`sentencepiece` dependency).
-- Exact counts (read from the checkpoint): 89 starting single-character tokens -> 910 learned merges -> 999 learned tokens + 1 reserved `<unk>` token = 1000 total vocab.
-- Whitespace/punctuation: no special-casing -- every character, including spaces and punctuation, starts as its own token and is merged purely by pair frequency like any other character.
-- Unknown tokens: a `<unk>` token is added after training; `encode()` falls back to it for any token absent from the learned vocab.
-
-**Training setup (Section: Training setup)**
-- Context length (block_size): 128
-- Batch size: 32
-- Optimizer: `torch.optim.AdamW`, PyTorch defaults except `lr` -- betas=(0.9, 0.999), eps=1e-8, **weight_decay=0.01** (never overridden in `train_model()`)
-- Learning rate: constant 3e-4, no scheduler
-- Training steps: 3,000 steps per model (Experiment 1); step-based, not epoch-based -- each step samples a fresh random block_size window via `get_batch`
-- Dropout: 0.1
-- Gradient clipping: none (`train_model` never calls `clip_grad_norm_`)
-- Random seed: **none set anywhere in the real training path.** No `torch.manual_seed()` call exists outside `model.py`'s own unrelated standalone smoke test. Every run, including this one, used whatever the ambient global RNG state was.
-
-**Hardware and timing methodology (Section: Hardware and timing methodology)**
-- Hardware: Apple M1 Pro (MacBook Pro), 16 GB RAM
-- Backend: PyTorch MPS (`torch.backends.mps.is_available() == True`)
-- Software: PyTorch 2.4.0, Python 3.12.4, macOS 27.0 (build 26A428)
-- Synchronization: yes -- `metrics.generation_latency()` calls `torch.mps.synchronize()` right after the untimed warmup generation and again right after the timed repeats, before either clock read, so queued-but-unfinished MPS work never leaks across the timer boundary.
-- Prompt/context length for the latency benchmark: 10 tokens (`LATENCY_PROMPT_LEN`), generating 20/50/100 tokens on top -- all well inside the models' block_size=128.
-- Decoding strategy: **sampling**, not greedy -- temperature=0.8, top_k=50 (same defaults used everywhere generation happens in this codebase). The prompt itself is a random token sequence, not real text, since the benchmark measures compute cost, not output quality.
-
-**Fair-comparison controls (Section: Fair-comparison controls)**
-- `PEFT_MAX_STEPS` (fine-tuning step budget for every Experiment 2 variant, baseline included): 500
-
-**Experiment 2 / LoRA config (Section: Experiment 2 Setup)**
-- LoRA target modules: **all four linear layers per transformer block** -- both attention projections (`qkv_proj`, `out_proj`) and both feed-forward linears (`ff.net[0]`, `ff.net[2]`) -- not only query/value.
-- LoRA alpha: alpha = 2 x r for every rank tested (r=4->alpha=8, r=8->alpha=16, r=16->alpha=32), so the scaling factor alpha/r is a constant 2.0 across all three ranks -- only capacity (r) varies between them, not the update's magnitude scaling.
-- LoRA dropout: 0.0
-- Base weights frozen: confirmed by construction -- `add_lora()` sets `requires_grad=False` on every base parameter before wrapping, and `train_model()` only ever optimizes parameters with `requires_grad=True`, so frozen base weights never receive an update in any LoRA variant.
-- Optimizer/LR for Experiment 2: identical to Experiment 1 -- same `AdamW`, same constant `LEARNING_RATE=3e-4`.
-- Identical initialization: yes -- every variant (`full_finetune` included) is a `copy.deepcopy()` of the exact same trained base-model instance, so all variants start from bit-identical weights.
-- Identical data ordering: **no** -- `get_batch()` draws random windows via unseeded `torch.randint` on every call, so no two variants (or two runs) see the same sequence of training batches. Combined with the no-seed point above, the small differences between LoRA ranks include some irreducible run-to-run sampling noise that this run does not quantify.
-
-**Experiment 2 training-time note (Section: Results, "Training time")**
-- Independent runs per training-time figure: **1** (single run, no repeats, no seed control). The rank-vs-time ordering (123.9s > 116.8s > 111.1s) is a single-sample measurement per rank -- suggestive, not confirmed stable.
-
-**Experiment 3 (Section: Setup / Limitations)**
-- Prompt/context length: 10 tokens (same as above)
-- Decoding: sampling (temperature=0.8, top_k=50), not greedy
-- Peak memory: **not measured** -- no `torch.mps.current_allocated_memory()` (or equivalent) call exists anywhere in this codebase. This is a real gap, not a value to look up; it needs new instrumentation to answer.
-
-**Limitations section**
-- "exact number of stories/documents used relative to the full corpus": see Dataset above (8,000 / ~2.12M train stories; 2,000 / ~21.99K validation stories).
-- "exact hardware and PyTorch/MPS version": see Hardware above.
-- "confirmation of how many random seeds were used per configuration": zero seeds set, one run per configuration everywhere in this report. Latency's "3 repeats" average multiple generations *within the same run*, not multiple independently-seeded runs.
-- "exact implementation details" for BPE: see Tokenization above -- from-scratch, pure-Python, greedy highest-pair-frequency merging (`get_pair_counts` + `max(..., key=...)`), no whitespace/punctuation special-casing, `<unk>` fallback added post hoc.
+- E1/E2 test metrics cover 2M of 9.17M test tokens; E3 covers 1M per test set.
+- E1 logged against the test split during training (nothing selected on it).
+- E1 pools are prefixes of the train file, and E1's LR was fixed at 3e-4.
+- E4/E5 measure compute with random weights/tokens on one laptop GPU.
+- ~5.6% of TinyStories validation stories contain a mangled-quote artifact
+  inherited from the source data.

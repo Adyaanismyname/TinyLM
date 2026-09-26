@@ -210,7 +210,9 @@ def fig_e4_train_speed():
     for path in paths:
         with open(path) as f:
             data = json.load(f)
-        device = data["device"]
+        device = {
+            "NVIDIA GeForce RTX 3050 6GB Laptop GPU": "RTX 3050 Laptop",
+        }.get(data["device"], data["device"])
         by_method = {}
         for r in data["results"]:
             by_method.setdefault(r["method"], []).append((r["width"], r["summary"]["p50"]))
@@ -218,7 +220,7 @@ def fig_e4_train_speed():
             points.sort()
             xs, ys = zip(*points)
             ax.plot(xs, ys, color=colors.get(method, INK_MUTED), linewidth=1.6, marker="o",
-                    markersize=4, label=f"{method} ({device[:12]})", alpha=0.85)
+                    markersize=4, label=f"{method} ({device})", alpha=0.85)
 
     ax.set_xlabel("Model width (embed_dim)")
     ax.set_ylabel("Median step time (s)")
@@ -263,8 +265,10 @@ def fig_e5_kvcache_speedup():
                     xs.append(gen_len)
                     ys.append(base / cached_time)
             if xs:
+                linestyle = "-" if batch_size == 16 else ":"
                 ax.plot(xs, ys, color=colors.get(cache_mode, INK_MUTED), linewidth=1.6, marker="o",
-                        markersize=4, label=f"{cache_mode} (batch={batch_size})", alpha=0.85)
+                        markersize=4, linestyle=linestyle,
+                        label=f"{cache_mode} (batch={batch_size})", alpha=0.85)
 
     ax.set_xlabel("Generated tokens")
     ax.set_ylabel("Speedup (no-cache / cached)")

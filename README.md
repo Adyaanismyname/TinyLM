@@ -92,7 +92,13 @@ python3 metrics.py --kv-cache      # KV-cache latency comparison only
 
 ## Results
 
-`[TO ADD once the real multi-seed runs finish]` — every number in `results/report.md` is generated from `results/runs/*/*.json`, never hand-typed.
+The full results, aggregated from `results/runs/*/*.json` (means + 95% CIs over seeds, E2 power-law fit), are in [`results/report.md`](results/report.md); the paper-length write-up is [`tinyLmPaper.latex`](tinyLmPaper.latex). Headlines:
+
+- **E1 (data):** at a fixed 100M-token budget, unique data past ~8M tokens (12.5 epochs of repetition) buys nothing measurable; even 50 epochs of repetition costs only ~2% perplexity.
+- **E2 (model):** test loss falls monotonically from 75K to 8.8M parameters, well fit by $L = 0.71 + 103.7\,N^{-0.37}$.
+- **E3 (LoRA vs. full FT):** LoRA r16 closes ~94% of the perplexity gap with 14.7% of the trainable parameters and forgets less; no arm learns explicit word-constraint following (≤1.9% vs. a 92.8% reference ceiling); LoRA trains ~20–27% slower at this width.
+- **E4 (speed crossover):** LoRA is slower per step below ~width 512 and 1.84x faster at width 1024 (102M params).
+- **E5 (KV cache):** no reliable speedup ≤100 generated tokens or at batch 1; 1.85–1.87x at batch 16 with 490 tokens, where a preallocated cache also caps peak memory.
 
 ## License
 
