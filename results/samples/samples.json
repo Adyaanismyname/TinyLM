@@ -1,0 +1,241 @@
+{
+  "device": "NVIDIA GeForce RTX 3050 6GB Laptop GPU",
+  "temperature": 0.8,
+  "top_k": 50,
+  "max_new_tokens": 300,
+  "arms": [
+    "lora_r1",
+    "lora_r8",
+    "lora_r64",
+    "full_finetune"
+  ],
+  "reproduction_check": {
+    "lora_r1": {
+      "instruct_ppl_here": 3.2869255030604427,
+      "instruct_ppl_e3_json": 3.2869254730386825
+    },
+    "lora_r8": {
+      "instruct_ppl_here": 3.251367838621757,
+      "instruct_ppl_e3_json": 3.2513850956814294
+    },
+    "lora_r64": {
+      "instruct_ppl_here": 3.2125502862812363,
+      "instruct_ppl_e3_json": 3.212550272147436
+    },
+    "full_finetune": {
+      "instruct_ppl_here": 3.20200844023863,
+      "instruct_ppl_e3_json": 3.202008417646084
+    }
+  },
+  "story_samples": [
+    {
+      "prompt": "Once upon a time, there was a little girl named Mia.",
+      "text": " Mia loved to play outside in the park, but sometimes she would not fight over. One day, Mia saw a big cloud and decided to take it off to the cloud. She wanted to eat it, but she was too shy. Mia started to cry. She screamed and started to cry. Her mom came to her and said, \"Don't worry, Mia. I will make you feel better.\" Mia was scared, but she remembered her mom had caught her and she hadn't eaten it. She felt much better and was able to go back to the clouds. She never forgot the clouds to eat it again.",
+      "hit_eos": true
+    },
+    {
+      "prompt": "Tom and his dog went to the park.",
+      "text": " They saw a big tree with many bells. They wanted to fly fast. \"Can I watch the tree,\u00e2\u20ac said Tom. \"Sure, Tom. That sounds fun and funny.\" \"But Tom did not see that Tom was watching a way. He was a squirrel, who was working hard and fast. Tom did not know what to do. He felt sad. He wanted to play with the bell. But Tom was sad, but he was mean. He said, \"Tom, I am sorry. I am mean. I can not watch the trees go away.\" Tom did not want to see the bell. He thought it was funny. He wanted to hear Tom on the bell. Tom did not come back. He did not see the bell. He was scared. He did not want",
+      "hit_eos": false
+    },
+    {
+      "prompt": "One day, a big bird landed on the window.",
+      "text": " The bird didn't see Max. The bird flew away. The little bird flew away and it saw the bird. The bird flew away quickly. The little bird was scared. It flew away from Max and patted the bird. The bird flew away, leaving the bird. The bird was so happy. The bird thanked the little bird for being so brave. From that day on, the little bird liked to play with the bird again.",
+      "hit_eos": true
+    },
+    {
+      "prompt": "",
+      "text": "Once upon a time, there was a happy little girl named Lily. One day, she found a big yellow dress on the ground. It was very shiny and had big colors on it. Lily picked it up and put it in her mouth. As she was walking, she saw a big box with a lot of red yellow boxes. She wanted to try it, but she was too small. She tried to draw on a crayon for the box to hide. When she tried to take the box, the box was too big and she didn't want to take it away. But it was too heavy for her. Lily was sad because she knew she could help her grow the video. So, she put it in the box and prevented it up. She put it in the ",
+      "hit_eos": false
+    }
+  ],
+  "instruct_samples": [
+    {
+      "header": "Features: Dialogue Words: dance, watch, guilty Summary: Sara takes her dad's watch without permission to wear while dancing, but when her dad asks for it, she tells the truth and apologizes. Her dad forgives her and they dance together happily. Story:",
+      "words": [
+        "dance",
+        "watch",
+        "guilty"
+      ],
+      "outputs": {
+        "baseline_frozen": {
+          "text": " When Sue is ready, she is proud of herself for being so brave. She sings a song the apologize and tells everyone the truth. Then, she goes back to her dad. He is happy to be reminding the truth.",
+          "words_used": []
+        },
+        "lora_r1": {
+          "text": " Sara and Ben are twins. They like to play with their dad. They have a lot of fun. One day, they see a new car. It is white and has a brambulance. It does not mind. It licks it ticket the car. It is making noises. It looks sad. Sara and Ben are worried. They think it is nice and exciting. They run towards their dad's face. He wants to check it. It is not fair. Sara and Ben are scared. They want to play with their dad. They do not want to play with the new car. They do not want to be friends. They do not like the new car. They do not like the new car. They want to play with the new car. They do not want to",
+          "words_used": []
+        },
+        "lora_r8": {
+          "text": " Sara and Ben are twins. They like to play with their dad. They have a lot of fun with TV. But sometimes, they do not feel like the truth. One day, Sara and Ben find their dad's watch. They feel the wind in their faces and their dad gets. They want to play. It is shiny and soft and shiny. They see many things they have for their dad. \"Vroom, Ben, you can wear my watch,\" Tom says. \"Can we have some cookies?\" Sara asks. \"No, this is mine!\" Ben says. They are brave. They look at the picture. They see a motor. It has a horn. The motor has a thorn. He thinks it is nice and shiny. She wants to pretend it is the motor ",
+          "words_used": [
+            "watch"
+          ]
+        },
+        "lora_r64": {
+          "text": " Sara and Ben are twins. They like to play with their dad. They have a big bowl of the watch. They pretend to be a prose to make a picture of the picture of the stars. One day, they go to the park with their dad. They see a big green white sky with a big, white rainbow on it. Sara thinks the sky is like a princess that makes a picture. She reaches a picture of a picture of a bird that makes her feel happy. \"Look at this picture?\" Ben asks. \"It is a picture of a picture of a picture of a bird.\" \"Wow, look at it,\" the bird says. \"It is a picture of a picture of a bird!\" They all are happy. They decide to dance",
+          "words_used": [
+            "dance",
+            "watch"
+          ]
+        },
+        "full_finetune": {
+          "text": " Sara and Ben are twins. They like to play with their dad. They have a lot of fun. One day, they see a new car. It is white and has a tamp. It is shiny and red and has a long nose and a long tail. Sara and Ben want to play with the car. They take the car and play with it. Sara says, \"It is my car. I am very brave. It is not fair or fair. The car is mean. Do you want to play with it?\" Ben says, \"No, Ben. I do not want to play with it. I want to play with it.\" They look at the car. They feel sorry. They look at their dad and dad. They do not like the car. They do not want to do that. They",
+          "words_used": []
+        }
+      }
+    },
+    {
+      "header": "Features: Twist Words: clean, police, rough Summary: Timmy helps the police find a lost puppy after hearing a loud noise outside while cleaning up his toys. Story:",
+      "words": [
+        "clean",
+        "police",
+        "rough"
+      ],
+      "outputs": {
+        "baseline_frozen": {
+          "text": " \"Wow, I did it!\" Mommy smiled and said, \"That's the best Cord\". Timmy nodded and walked back to the police with a smile.",
+          "words_used": [
+            "police"
+          ]
+        },
+        "lora_r1": {
+          "text": " Once upon a time, there was a little boy named Timmy. Timmy loved to play outside with his toys in his room. One day, he met a man who was lost on his toy car. Timmy's friend wanted to help him. They asked the man, \"Why are you sad?\" The man said, \"I lost my toy car.\" Timmy thought for a moment. \"But next time, we need to clean up the car. It's important to clean up.\" The man said, \"I can make sure we can fix the car together.\" Timmy said, \"Of course, let's do that. We can help the police together.\" The man did not answer anymore, but they still had a big friend.\" Timmy was happy and gave the man a big hug. He was happy to help the man. ",
+          "words_used": [
+            "clean",
+            "police"
+          ]
+        },
+        "lora_r8": {
+          "text": " Once upon a time, there was a little boy named Timmy. Timmy loved to play outside with his toys and run all around the garden. One day, Timmy's mom asked him to clean up his toys with lots of pasta. Timmy was so he gave the big puppy back to his mom. Timmy was so happy and excited to see what they would happen. On the way home, Timmy saw a big puppy with lots of red cars in the middle of a tree. He thought it was very cute, but he didn't know what to do. So, Timmy asked his mom where the puppy was inside. His mom opened the box and saw the puppy with a big smile on her face. Timmy was so happy and surprised. He hugged his mom and said, \"Yes, thank you ",
+          "words_used": [
+            "clean"
+          ]
+        },
+        "lora_r64": {
+          "text": " Once upon a time, there was a little boy named Timmy. Timmy loved to play outside with his toys and run around in the sunshine. One day, he met a big dog named Max who was baring at the police and he needed to play with his toys. Timmy felt sad and didn't know what to do. Later, Timmy saw a big puppy and wanted to help. His friend said, \"Don't worry, I will help you. I can help you find the puppy together.\" Timmy helped the police by pulling the puppy out of the puppy. They walked around the park, and Timmy was very happy. Timmy learned his lesson and helped others when they needed it. Now, so Timmy learned that sometimes you need to pay for help when they need",
+          "words_used": [
+            "police"
+          ]
+        },
+        "full_finetune": {
+          "text": " Once upon a time, there was a little boy named Timmy. Timmy loved to play outside in the park. One day, he saw a big, shiny puppy on the ground. The puppy was so happy that the puppy wanted to disturb it. Timmy wanted to play with the puppy, so he jumped on the puppy and started to play with the puppy. After the puppy was done, Timmy met a big dog named Max. Max wanted to play with the puppy too. Max said, \"No, Max. We need to clean up the puppy. We need to clean up the puppy together.\" Timmy felt happy and said, \"Thank you, Max! I love you.\" They went to the puppy with the puppy and played in the park. Summary: Timmy and Max ",
+          "words_used": [
+            "clean"
+          ]
+        }
+      }
+    },
+    {
+      "header": "Features: Twist Words: fill, pastry, independent Story:",
+      "words": [
+        "fill",
+        "pastry",
+        "independent"
+      ],
+      "outputs": {
+        "baseline_frozen": {
+          "text": " I have a surprise for you. I need a surprise for you to the jeep.\" She put her hand on the jeep and went to the kitchen. She opened the oven and read a jeep of jeep. She put a map on it and then dried her hands. She was happy.",
+          "words_used": []
+        },
+        "lora_r1": {
+          "text": " Once upon a time, there was a little girl named Lily. She loved to play with pastle with her friends. One day, her friend came and showed her her the pastle. \"Good job, Lily!\" said Lily. \"Can I have an adorable pastle?\" \"Yes, we can,\" said her friend. So, they started to fill the pastle together. As they were filled with paint, they saw a little girl named Lily. Lily wanted to help her mommy get the pastle. \"Look, mommy! I see.\" Lily replied. \"Can I pick the pastle pastle with you?\" Her mommy thought. She was happy to see the pastle. After dinner, Lily found a yellow pastle. She put it on the pastle close and started to paint. Mommy heard Lily and ",
+          "words_used": [
+            "fill"
+          ]
+        },
+        "lora_r8": {
+          "text": " Once upon a time, there was a little girl named Lily. She loved to play with pasta with her friends. One day, Lily and her friend went to the library. Lily wanted to play with her friends, but her friends were too fast. Lily wanted to make another pasta in her backyard. At the game, Lily saw a big tree with a big face. She tried to catch it but it was too fast. She tried to catch it. But the tree was too fast. Lily was stuck in the tree. She started to cry and said, \"Mom, what's wrong?\" Her friend came to help her. Lily said, \"I don't want to fill the tree with you.\" Her friend said, \"Don't worry, Lily. I'll find a new pasta with a big ",
+          "words_used": [
+            "fill"
+          ]
+        },
+        "lora_r64": {
+          "text": " Once upon a time, there was a small girl named Lily. She loved to play with pasta with her friends. One day, Lily was playing with her toys when she saw a big tree. She wanted to play with it, but her mom said no. Lily wanted to fill the tree, but her mom said no. Lily asked her mom if she wanted to play with the jewel. Her mom said yes, but Lily said no to fill it with the pasta. Lily tried to bring the jewel, but it was too high. She tried to fill the jewel with the pasta, but it was too heavy. She tried to fill the jewel with it, but it was too strong for her to fill it with a loud noise. Her mom tried",
+          "words_used": [
+            "fill"
+          ]
+        },
+        "full_finetune": {
+          "text": " Once upon a time, there was a little girl named Lily. She loved to play with pastry with her friends. One day, her mom gave her a pastry for dinner. It was a cute pastry, and Lily was very happy. The pastry was nice and clean. Lily loved the pastry. She thought it was special for dinner. As she was filled with dinner, she asked her mom for dinner, but her mom said she could have dinner. Lily gave her mom a hug and a big hug. After dinner, she went to a special pastry with dinner. At the end of the day, Lily's mom came over to play. In the end, she put on dinner and dinner to dry some water. Lily was ",
+          "words_used": [
+            "fill",
+            "pastry"
+          ]
+        }
+      }
+    },
+    {
+      "header": "Words: borrow, crystal, strong Summary: Lily accidentally breaks her friend's crystal necklace but learns the importance of honesty and being careful when borrowing things. Story:",
+      "words": [
+        "borrow",
+        "crystal",
+        "strong"
+      ],
+      "outputs": {
+        "baseline_frozen": {
+          "text": " That's important to be careful when borrows, okay?",
+          "words_used": [
+            "borrow"
+          ]
+        },
+        "lora_r1": {
+          "text": " Once upon a time, there was a little girl named Lily. She loved to play with her friends at school with everything she wanted. One day, Lily's friend, Daisy, came over to play. Lily's friend, a little girl named Lily, came over to play. \"Lily, that is a good friend.\" Daisy said, \"But I don't know what to do.\" Lily said, \"Why not you play with the telephon in the kitchen and make it pretty.\" Lily didn't want to do that mommy looked at the tele. But her friend said, \"I don't want to play with the television. It is very pretty.\" So, Lily played with her toy toys and showed them all kinds. They played together every day and Lily learned that sometimes it's better to borrow and be ",
+          "words_used": [
+            "borrow"
+          ]
+        },
+        "lora_r8": {
+          "text": " Once upon a time, there was a little girl named Lily. She loved to play outside. One day, she went to the park to play. She saw a big train in the park. She wanted to play with it, but the train was too hot and sparkly. Lily decided to ask her friend, Sam, for help. They both got closer to the train. At the train was too small, but they didn't like the train. Suddenly, the train came out of the wind. The train broke into a big hole and the train fell down. Lily and Sam were very hurt, but they didn't know what to do. They wanted to play with the train and make goa fun together.",
+          "words_used": []
+        },
+        "lora_r64": {
+          "text": " Once upon a time, there was a little girl named Lily. She loved to play outside. One day, she went to the park to play. She saw a big train in the park. She wanted to try it. She tried the borrow but she couldn't catch it. But it was too high. She tried to grab the borrow but it was too strong. Lily was selfish and didn't cry. She tried to grab the borrow, but it was too high. She tried to catch it, but it hurt her face. The borrow was very sad and started to hurt Lily. Lily felt bad for not being selfish and she went to the park to get her crystal.",
+          "words_used": [
+            "borrow",
+            "crystal",
+            "strong"
+          ]
+        },
+        "full_finetune": {
+          "text": " Once upon a time, there was a little girl named Lily. She loved to play outside. One day, she went to the park to play. She saw a big train in the park. She wanted to try it. She tried the bath too, but it was too fast. Lily tried to pull the bath too hard for her. Suddenly, the bath got stuck and it hurt her. Lily didn't cry. She tried to grab it, but it was too fast. Then, Lily caught the bath and made a big mess. She tried to grab it, but it was too heavy for her. She tried and pushed, but it was too hard. The bath was too loud. Lily was sad and cried. She wished her friend would help her find her way ",
+          "words_used": []
+        }
+      }
+    },
+    {
+      "header": "Features: Conflict Words: joke, parent, broken Summary: Lily accidentally broke her toy car, but her parent fixed it and made her laugh, and they continued to play together happily. Story:",
+      "words": [
+        "joke",
+        "parent",
+        "broken"
+      ],
+      "outputs": {
+        "baseline_frozen": {
+          "text": " Lily learned that it's important to be careful and be quiet with your friends and not to be quiet. When you play with the toys, you should not be good and have fun with others: just like how to play with us, no one can feel scary. And you should always be careful with when you have fun, just listen to me and to share your things with others.",
+          "words_used": []
+        },
+        "lora_r1": {
+          "text": " Once upon a time, there was a little girl named Lily. She had a big, furry toy car that she loved to play with. One day, she went to the store to buy a new toy car. It was very big and shiny, but she couldn't find it anywhere. Suddenly, the toy car rolled over the street. Lily was so happy that she jumped up and down and down. When she got home, she saw that it was a shiny toy car. She asked her mom if she could play with it. Her mom said yes, so Lily put the toy car on the floor and went to the store. The store was brown and brown and was sad. Lily felt sad for the toy car and didn't want to come back soon. She knew that Max had to",
+          "words_used": []
+        },
+        "lora_r8": {
+          "text": " Once upon a time, there was a parent named Lily. She had a big, shiny red car that she liked to play with. One day, Lily's parent came to the park with her. It was so pretty and round. Lily was so happy and grateful. As she was playing, she saw a big boy who was very happy. \"Hello, little one. Can I play with you?\" she asked her. \"Sure, little one. That's not nice,\" said Lily. \"I can't find the car. Can you help me?\" \"Don't worry, Lily. I'll help me find your toy.\" Suddenly, a kind lady appeared and said, \"Don't worry, Lily. We'll help you find the car back safe.\" Lily was happy and grateful. They all played together and played together all day. And they",
+          "words_used": [
+            "parent"
+          ]
+        },
+        "lora_r64": {
+          "text": " Once upon a time, there was a little girl named Lily. She had a toy car that she loved very much. One day, Lily's mom took her to the store to buy some fixed fixed fixing fixing fire boxes. Lily was so happy, and she hugged her mom. As they were building, Lily found a shiny fire that fixed fixed its car that she had lost her toy car! She took the fixed fixed fixing the fire box. When they got home, they put it in a box and fixed it to the fixed fire. Lily was very happy, and she thanked her mom. From that day on, Lily always made sure to be careful with fixing firefight. Summary: Lily draws a fixed ",
+          "words_used": []
+        },
+        "full_finetune": {
+          "text": " Once upon a time, there was a little girl named Lily. She had a toy car that she loved very much. One day, Lily's mom took her to the store to buy some her parents for her to buy her for a party. Lily was so excited to make pretty parents with her toys. As they were at buying the parents, Lily saw a beautiful toy car that looked like a pretty car. She wanted to see that Lily wanted to play with it. \"Can we use it?\" she asked. \"Maybe we can use the toy to make it safe on the car,\" her mom replied. Lily was happy that her mom helped her look for the toy car and it made her feel nice again. She learned that sometimes things can be fun to play with,",
+          "words_used": [
+            "parent"
+          ]
+        }
+      }
+    }
+  ]
+}

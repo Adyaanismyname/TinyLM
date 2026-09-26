@@ -34,8 +34,14 @@ class LoRALinear(nn.Module):
 
         in_features = base_linear.in_features
         out_features = base_linear.out_features
-        self.lora_A = nn.Parameter(torch.empty(r, in_features))
-        self.lora_B = nn.Parameter(torch.zeros(out_features, r))
+        # Match the base layer's device/dtype -- add_lora is commonly called
+        # on a model that's already been moved to its training device (e.g.
+        # wrapping a loaded checkpoint), and a freshly-created nn.Parameter
+        # otherwise defaults to CPU float32 regardless of where `base_linear`
+        # lives, which crashes the first forward pass with a device mismatch.
+        factory_kwargs = {"device": base_linear.weight.device, "dtype": base_linear.weight.dtype}
+        self.lora_A = nn.Parameter(torch.empty(r, in_features, **factory_kwargs))
+        self.lora_B = nn.Parameter(torch.zeros(out_features, r, **factory_kwargs))
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
 
     def forward(self, x):
@@ -85,6 +91,55 @@ def lora_state_dict(model):
         for name, param in model.named_parameters()
         if name.endswith("lora_A") or name.endswith("lora_B")
     }
+
+
+def _merge_lora_linear(module):
+    """If `module` is a LoRALinear, returns a plain nn.Linear with the
+    adapter folded into the weight (W <- W + scaling * B @ A); otherwise
+    returns `module` unchanged, so merge_lora is safe to call on a model
+    where target_ff=False left the feed-forward layers un-wrapped."""
+    if not isinstance(module, LoRALinear):
+        return module
+
+    base = module.base
+    factory_kwargs = {"device": base.weight.device, "dtype": base.weight.dtype}
+    merged = nn.Linear(base.in_features, base.out_features, bias=base.bias is not None, **factory_kwargs)
+    with torch.no_grad():
+        # A: (r, in_features), B: (out_features, r) -- exactly the update
+        # LoRALinear.forward applies, just baked into the weight once
+        # instead of computed on every forward call. eval()-mode dropout is
+        # already an identity, so this is exact regardless of lora_dropout.
+        delta = module.scaling * (module.lora_B @ module.lora_A)
+        merged.weight.copy_(base.weight + delta)
+        if base.bias is not None:
+            merged.bias.copy_(base.bias)
+    return merged
+
+
+def merge_lora(model):
+    """
+    Folds every LoRALinear's adapter into its base weight and replaces it
+    with a plain nn.Linear, so the returned model has the exact same
+    architecture -- same layer types, same total parameter count -- as an
+    un-wrapped GPT built with identical config. That's what makes "LoRA vs.
+    full fine-tuning at the same final parameter count" (Experiment 3) a
+    meaningful comparison: after this call, only *how the weights were
+    trained* differs between the two arms, not what they are.
+
+    Mutates `model` in place and returns it. Every parameter is left
+    requires_grad=True afterward (as if the model had just been fully
+    fine-tuned) -- freeze it again explicitly if that's not what's wanted.
+    """
+    for block in model.blocks:
+        block.attn.qkv_proj = _merge_lora_linear(block.attn.qkv_proj)
+        block.attn.out_proj = _merge_lora_linear(block.attn.out_proj)
+        block.ff.net[0] = _merge_lora_linear(block.ff.net[0])
+        block.ff.net[2] = _merge_lora_linear(block.ff.net[2])
+
+    for p in model.parameters():
+        p.requires_grad = True
+
+    return model
 
 
 if __name__ == "__main__":

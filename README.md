@@ -1,10 +1,12 @@
 # TinyLLM
 
-A from-scratch, decoder-only GPT-style language model with a custom BPE tokenizer, trained on [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories). Built to run controlled experiments on three questions that are well studied at large model scale but rarely tested at ~1–2M parameters:
+A from-scratch, decoder-only GPT-style language model with a custom BPE tokenizer, trained on [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) and [TinyStoriesInstruct](https://huggingface.co/datasets/roneneldan/TinyStoriesInstruct). Built to run controlled experiments on questions that are well studied at large model scale but rarely tested at ~1–10M parameters:
 
-- **Scaling** — does more parameters reliably help at this scale?
-- **PEFT** — how does LoRA compare to full fine-tuning, matched by trainable parameter count?
-- **KV caching** — does it actually speed up generation for models this small?
+- **E1 — Data scaling**: at a fixed token budget, does more *unique* data beat repeating a smaller pool?
+- **E2 — Model scaling**: does more capacity help, over two orders of magnitude in parameter count?
+- **E3 — PEFT**: how does LoRA compare to full fine-tuning, matched by *final* parameter count, on a real fine-tuning task (adapting to TinyStoriesInstruct)?
+- **E4 — Training speed**: at what model width, if any, does LoRA actually train faster than full fine-tuning?
+- **E5 — KV caching**: does it speed up generation for models this small, and does a write-in-place cache change the answer?
 
 Everything is implemented from scratch on top of PyTorch — no `transformers`, no existing tokenizer library. Full write-up, methodology, and results: [`results/report.md`](results/report.md).
 
@@ -12,16 +14,22 @@ Everything is implemented from scratch on top of PyTorch — no `transformers`, 
 
 | File | What it is |
 |---|---|
-| `BPE.py` | From-scratch byte-pair-encoding tokenizer (training + encode/decode), with an `<unk>` fallback for out-of-vocab characters |
-| `dataset.py` | Loads + preprocesses TinyStories, trains the tokenizer, produces token-id sequences |
-| `model.py` | The GPT model — causal self-attention, pre-norm blocks, weight tying, and KV-cache-aware generation |
-| `lora.py` | LoRA (`LoRALinear`) — wraps a frozen linear layer with a trainable low-rank update |
-| `train.py` | Core training loop (`train_model`), reused by every experiment script below |
-| `metrics.py` | Evaluation: perplexity, bits-per-char, top-k accuracy, a unigram baseline, and KV-cache latency benchmarking |
-| `scaling_experiment.py` | Standalone: trains several model sizes on shared data |
-| `peft_experiment.py` | Standalone: LoRA (multiple ranks) vs. full fine-tuning vs. doing nothing, on a pretrained checkpoint |
-| `run_experiments.py` | The full pipeline used for the paper — scaling, then PEFT, then KV-cache latency — writes `results/report.md` + `results/report_data.json` |
-| `generate_figures.py` | Renders the 5 figures in `results/figs/` from `results/report_data.json` |
+| `BPE.py` | From-scratch, word-level byte-pair-encoding tokenizer (training + encode/decode), with a per-word cache and deterministic token IDs |
+| `dataset.py` | Loads + preprocesses TinyStories and TinyStoriesInstruct into plain Python structures (no tokenizer dependency) |
+| `prepare_data.py` | One-time pipeline: downloads both datasets, trains the tokenizer, writes memmap `.bin` files + `tokenizer.json` under `data/` |
+| `data.py` | `TokenStream`/`EpochBatcher` — seeded, epoch-based batch sampling over memmap or in-memory token streams, with optional per-token loss masking |
+| `model.py` | The GPT model — causal self-attention (manual or `scaled_dot_product_attention`), pre-norm blocks, weight tying, and three interchangeable generation paths (no cache, growing cache, preallocated cache) |
+| `lora.py` | LoRA (`LoRALinear`) plus `merge_lora`, which folds a trained adapter back into plain weights so a LoRA-fine-tuned model has the same architecture as a fully fine-tuned one |
+| `train.py` | Core training loop (`train_model`) — seeding, warmup+cosine LR schedule, gradient clipping — reused by every experiment script |
+| `metrics.py` | Evaluation: perplexity/BPC (optionally loss-masked), top-k accuracy, the Words-constraint-rate metric, generation latency, and peak-memory helpers |
+| `run_experiments.py` | Entry points for E1/E2/E3 (`python3 run_experiments.py e1\|e2\|e3 [--quick]`) |
+| `bench_train.py` | E4: standalone LoRA-vs-full-fine-tuning training-speed benchmark |
+| `bench_kvcache.py` | E5: standalone KV-cache latency/memory benchmark across cache implementations |
+| `generate.py` | Generate text from any saved checkpoint (`python generate.py --checkpoint ... --prompt "..."`) |
+| `generate_samples.py` | Recreates E3's seed-0 fine-tuned models and writes side-by-side sample stories to `results/samples/` |
+| `analysis.py` | Aggregates per-run JSONs into means + 95% CIs and fits E2's power law |
+| `generate_figures.py` | Renders the figures in `results/figs/` from `results/runs/` |
+| `tests/` | pytest suite covering the tokenizer, dataloader, model, LoRA merging, training, metrics, and each pipeline script end-to-end at small scale |
 
 ## Setup
 
@@ -29,59 +37,62 @@ Everything is implemented from scratch on top of PyTorch — no `transformers`, 
 pip install -r requirements.txt
 ```
 
-Requires Python 3.10+. Tested on PyTorch 2.4.0 with the MPS backend (Apple Silicon); also works on CUDA/CPU.
+Requires Python 3.10+. Tested on PyTorch 2.5 with CUDA (RTX 3050) and on Apple Silicon (MPS); also works on CPU.
 
 ## Usage
 
-Train a single model from scratch:
+Run the test suite (fast — small synthetic/tiny-real-data cases, not the real experiments):
 
 ```bash
-python3 train.py
+python3 -m pytest tests/
 ```
 
-This loads TinyStories, trains a BPE tokenizer (vocab size 1000 by default), trains the model, and saves `checkpoints/checkpoint.pt`. Checkpoints aren't tracked in this repo (see `.gitignore`) — train your own, or run the full pipeline below.
+Prepare the data once (downloads TinyStories + TinyStoriesInstruct, trains the tokenizer, writes `data/*.bin`):
 
-Evaluate a trained checkpoint (perplexity, accuracy, bits-per-char, generation diversity, throughput):
+```bash
+python3 prepare_data.py
+```
+
+This is a long-running job (the full TinyStories train split alone encodes to ~900M tokens) — run it in the background. Use `--tinystories-train-limit N` etc. for a fast, small-scale smoke test.
+
+Run an experiment. Always try `--quick` first on a machine you haven't run this on before — it exercises the whole pipeline (LR selection, multi-seed training, evaluation, JSON output) in well under a minute:
+
+```bash
+python3 run_experiments.py e1 --quick   # then, for real: python3 run_experiments.py e1
+python3 run_experiments.py e2 --quick
+python3 run_experiments.py e3 --quick   # needs e2's layers=8 checkpoint, or trains a tiny one itself in --quick
+```
+
+Run the training-speed and KV-cache benchmarks (do this separately on every machine/backend you want compared — that's the point of E4/E5):
+
+```bash
+python3 bench_train.py --quick     # then: python3 bench_train.py
+python3 bench_kvcache.py --quick   # then: python3 bench_kvcache.py
+```
+
+Regenerate the figures from whatever's in `results/runs/`:
+
+```bash
+python3 generate_figures.py
+```
+
+See what the models actually write. `run_experiments.py` reports numbers only (and saves just the 8-layer E2 base model), so `generate_samples.py` rebuilds the E3 seed-0 models — same learning rate, steps and data order, checked against the stored perplexities — and generates from each on the same prompts:
+
+```bash
+python3 generate.py --checkpoint checkpoints/e2_base_layers8_seed0.pt --prompt "Once upon a time" -n 3
+python3 generate_samples.py        # ~20 min: re-fine-tunes 4 arms, writes results/samples/samples.md
+```
+
+Evaluate a trained checkpoint:
 
 ```bash
 python3 metrics.py                 # full report
 python3 metrics.py --kv-cache      # KV-cache latency comparison only
 ```
 
-Run the full experiment pipeline (scaling + PEFT + KV-cache latency — all three sections of the paper):
-
-```bash
-python3 run_experiments.py
-```
-
-This is a long-running job (BPE training + 3 training runs + PEFT fine-tuning + latency sweeps) — run it in the background. Writes `results/report.md`, `results/report_data.json`, and one checkpoint per model size to `checkpoints/`.
-
-Regenerate the figures from existing results:
-
-```bash
-python3 generate_figures.py
-```
-
-Standalone experiment scripts, for ad-hoc runs without the full pipeline:
-
-```bash
-python3 scaling_experiment.py   # model-size sweep only
-python3 peft_experiment.py      # LoRA vs. full fine-tune only (needs checkpoints/checkpoint.pt from train.py)
-```
-
 ## Results
 
-Trained three models (992K / 1.30M / 1.73M parameters) from scratch on a shared 8,000-story TinyStories subset and tokenizer, then compared LoRA against full fine-tuning on the largest model, then benchmarked KV-cache generation latency at each size. Headline findings — full methodology, every table, and the complete `[TO ADD]`-filled write-up in [`results/report.md`](results/report.md):
-
-- **Scaling**: perplexity improved monotonically across all three sizes tested (25.81 → 23.51 → 21.82), with no plateau observed in this range.
-- **LoRA vs. full fine-tuning**: LoRA cut trainable parameters by up to ~26x while recovering most of full fine-tuning's quality gain — but did *not* train faster in wall-clock time; full fine-tuning was consistently faster despite updating far more parameters.
-- **KV caching**: latency effects were small and inconsistent at these model sizes and generation lengths (0.79x–1.19x), not the large, reliable speedup caching gives at production LLM scale.
-
-<p align="center">
-  <img src="results/figs/fig2_ppl_vs_params.png" width="32%">
-  <img src="results/figs/fig4_rank_vs_ppl.png" width="32%">
-  <img src="results/figs/fig5_kvcache_speedup.png" width="32%">
-</p>
+`[TO ADD once the real multi-seed runs finish]` — every number in `results/report.md` is generated from `results/runs/*/*.json`, never hand-typed.
 
 ## License
 
