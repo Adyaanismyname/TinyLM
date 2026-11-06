@@ -1,0 +1,149 @@
+{
+  "model": "E2 8-layer seed 0 (= E3 base)",
+  "sets": {
+    "tinystories_test": {
+      "stories": 21990,
+      "dup_stories": 6562,
+      "copies_distribution_among_dups": {
+        "1": 6562,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        ">5": 0
+      },
+      "all_dups_exposed_ge1_vs_unexposed": {
+        "n_a": 597,
+        "n_b": 4065,
+        "loss_diff": 0.002565986270451459,
+        "ci95": [
+          -0.01376844295506537,
+          0.019845620170423735
+        ]
+      },
+      "all_dups_any_exposure_vs_unexposed": {
+        "n_a": 2497,
+        "n_b": 4065,
+        "loss_diff": 0.0037656752833312712,
+        "ci95": [
+          -0.00562421385057007,
+          0.012880104619621234
+        ]
+      },
+      "one_copy_exposed_ge1_vs_unexposed": {
+        "n_a": 597,
+        "n_b": 4065,
+        "loss_diff": 0.002565986270451459,
+        "ci95": [
+          -0.013327724971459265,
+          0.019784599079641613
+        ]
+      },
+      "one_copy_any_exposure_vs_unexposed": {
+        "n_a": 2497,
+        "n_b": 4065,
+        "loss_diff": 0.0037656752833312712,
+        "ci95": [
+          -0.005326991952933224,
+          0.013236140875755477
+        ]
+      },
+      "multi_copy_vs_one_copy_both_unexposed": {
+        "n_a": 0,
+        "n_b": 4065,
+        "loss_diff": NaN,
+        "ci95": [
+          NaN,
+          NaN
+        ]
+      },
+      "garbled_pct": {
+        "dups": 5.623285583663517,
+        "non_dups": 5.574280528908479,
+        "non_dup_sharing_50gram": 0.7069059271343121,
+        "non_dup_no_50gram": 7.097872340425532
+      },
+      "garbled_vs_clean_loss": {
+        "n_a": 1229,
+        "n_b": 20761,
+        "loss_diff": 0.1257630808838326,
+        "ci95": [
+          0.11572581220213252,
+          0.1354940255201119
+        ]
+      }
+    },
+    "instruct_test": {
+      "stories": 4999,
+      "dup_stories": 2162,
+      "copies_distribution_among_dups": {
+        "1": 2053,
+        "2": 109,
+        "3": 0,
+        "4": 0,
+        "5": 0,
+        ">5": 0
+      },
+      "all_dups_exposed_ge1_vs_unexposed": {
+        "n_a": 210,
+        "n_b": 1380,
+        "loss_diff": -0.04268325122612171,
+        "ci95": [
+          -0.06806521535628651,
+          -0.015608913957887395
+        ]
+      },
+      "all_dups_any_exposure_vs_unexposed": {
+        "n_a": 782,
+        "n_b": 1380,
+        "loss_diff": -0.019102770466455032,
+        "ci95": [
+          -0.035340722992151706,
+          -0.002291921707395355
+        ]
+      },
+      "one_copy_exposed_ge1_vs_unexposed": {
+        "n_a": 179,
+        "n_b": 1341,
+        "loss_diff": -0.030668987595184438,
+        "ci95": [
+          -0.060417629910709966,
+          -0.0014070310526534593
+        ]
+      },
+      "one_copy_any_exposure_vs_unexposed": {
+        "n_a": 712,
+        "n_b": 1341,
+        "loss_diff": -0.013891109479994501,
+        "ci95": [
+          -0.030273191996044325,
+          0.0036359378143415856
+        ]
+      },
+      "multi_copy_vs_one_copy_both_unexposed": {
+        "n_a": 39,
+        "n_b": 1341,
+        "loss_diff": -0.17371077641417143,
+        "ci95": [
+          -0.21468404621903475,
+          -0.1297884874515856
+        ]
+      },
+      "garbled_pct": {
+        "dups": 0.0,
+        "non_dups": 0.0,
+        "non_dup_sharing_50gram": 0.0,
+        "non_dup_no_50gram": 0.0
+      },
+      "garbled_vs_clean_loss": {
+        "n_a": 0,
+        "n_b": 4999,
+        "loss_diff": NaN,
+        "ci95": [
+          NaN,
+          NaN
+        ]
+      }
+    }
+  }
+}
