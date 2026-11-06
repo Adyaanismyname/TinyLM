@@ -17,91 +17,85 @@ Inference in Million-Parameter Language Models: An Empirical Study}
 
 \author{
 \IEEEauthorblockN{Adyaan Ahmed}
-\IEEEauthorblockA{
-School of Electrical Engineering and Computer Sciences (SEECS) \\{}
-National University of Sciences and Technology (NUST) \\{}
-Islamabad, Pakistan \\{}
+\IEEEauthorblockA{\footnotesize
+School of Electrical Engineering and Computer Sciences (SEECS)\\
+National University of Sciences and Technology (NUST)\\
+Islamabad, Pakistan\\
 aahmed.bsds23seecs@seecs.edu.pk
+}
+\and
+\IEEEauthorblockN{Muhammad Muntazar}
+\IEEEauthorblockA{\footnotesize
+School of Electrical Engineering and Computer Sciences (SEECS)\\
+National University of Sciences and Technology (NUST)\\
+Islamabad, Pakistan\\
+mmuntzar.bsds23seecs@seecs.edu.pk
 }
 }
 
 \maketitle
 
 \begin{abstract}
-Scaling laws, data-repetition trade-offs, low-rank adaptation (LoRA), and key-value (KV) caching are well studied in large language models, but whether their benefits carry over to models with only a few million parameters is not obvious. I train decoder-only Transformers from scratch on the full TinyStories corpus (904M tokens) with a custom word-level BPE tokenizer and run five controlled experiments on one laptop GPU, with seeded runs and per-configuration learning-rate selection throughout. At a fixed 100M-token training budget, shrinking the pool of \emph{unique} data from 100M to 8M tokens -- i.e. training for up to 12.5 epochs instead of one -- costs almost nothing (test perplexity 5.19 vs.\ 5.20), and even 50 epochs of repetition over a 2M-token pool costs only about 2\%. Across seven model sizes from 75K to 8.8M parameters, test loss falls monotonically and is well described by a power law, $L = 0.71 + 103.7\,N^{-0.37}$. When adapting a 1.78M-parameter model to an instruction-following task, LoRA at rank 16 closes 94\% of full fine-tuning's perplexity gap with 14.7\% of the trainable parameters and forgets less of the base distribution, yet no arm -- full fine-tuning included -- learns to follow explicit word constraints (0.6--1.9\% success against a 92.8\% reference ceiling). LoRA trains \emph{slower} than full fine-tuning at this width; a width sweep shows the crossover lies between embedding dimensions 512 and 1024, where LoRA becomes 1.84x faster. KV caching gives no reliable speedup for short single generations but reaches 1.85x at batch 16 and 490 generated tokens, where a preallocated cache also caps peak memory below the uncached path. The takeaway is unchanged but now better supported: parameter efficiency, data efficiency, training-time efficiency, and inference-time efficiency are separate axes that do not automatically move together once model size drops this low.
+Scaling laws, data repetition, low-rank adaptation (LoRA), and key-value (KV) caching are well studied in large language models, but it is unclear whether their benefits hold for models with only a few million parameters. We train decoder-only Transformers from scratch on TinyStories (904M tokens) and run five controlled, seeded experiments on a single laptop GPU. With a fixed budget of 100M training tokens, shrinking the unique data from 100M to 8M tokens (12.5 epochs) leaves test perplexity almost unchanged (5.20 compared with 5.19), and even 50 epochs over 2M tokens costs only about 2\%. Across seven model sizes from 75K to 8.8M parameters, test loss follows the power law $L = 0.71 + 103.7\,N^{-0.37}$. When adapting a 1.78M-parameter model to an instruction task, LoRA at rank 16 recovers 94\% of the perplexity gain of full fine-tuning with 14.7\% of the trainable parameters and forgets less. However, no method learns to follow explicit word constraints (0.6\% to 1.9\% success, compared with 92.8\% for reference stories). At this width LoRA also trains more slowly than full fine-tuning, and it becomes faster ($1.84\times$) only at embedding dimension 1024. KV caching gives no reliable speedup for short generations but reaches $1.85\times$ at batch size 16 with 490 tokens. These results show that parameter, data, training-time, and inference-time efficiency are separate properties that do not automatically improve together at this scale.
 \end{abstract}
 
 \begin{IEEEkeywords}
-Tiny language models, decoder-only Transformers, scaling laws, data-constrained scaling, LoRA, parameter-efficient fine-tuning, KV cache, inference efficiency, empirical study.
+Tiny language models, scaling laws, data-constrained scaling, LoRA, parameter-efficient fine-tuning, KV cache, inference efficiency.
 \end{IEEEkeywords}
 
 \section{Introduction}
 
-Small language models trained on narrow, simplified corpora are a cheap setting for studying language model behavior. TinyStories \cite{eldan2023tinystories} showed that models far smaller than production systems can still produce coherent text when trained on a restricted vocabulary and simple narrative structure. I refer to this regime loosely as TinyLMs: decoder-only Transformers on the order of a hundred thousand to a few million parameters, small enough that controlled experiments can be repeated, with multiple seeds, on a single laptop GPU.
+Small language models trained on simplified corpora offer an inexpensive way to study how language models behave. TinyStories \cite{eldan2023tinystories} showed that models far smaller than production systems can still write coherent text when trained on a restricted vocabulary with simple narrative structure. We use the informal term TinyLMs for decoder-only Transformers with roughly a hundred thousand to a few million parameters, which are small enough that controlled experiments can be repeated with several seeds on one laptop GPU.
 
-A separate line of work studies efficiency at the other end of the scale: scaling laws that predict how loss falls with model and data size \cite{kaplan2020scaling,hoffmann2022chinchilla}, analyses of how repeated data compares with fresh data \cite{muennighoff2023dataconstrained}, parameter-efficient fine-tuning methods such as LoRA \cite{hu2022lora,houlsby2019peft}, and KV caching, which avoids recomputing attention keys and values at every generation step \cite{shazeer2019multiquery,pope2022efficiently}. These techniques are motivated by the cost of training and serving models with hundreds of millions to hundreds of billions of parameters. Whether they behave the same way at the opposite end of the scale is a separate question: per-layer computation is small, fixed overheads (kernel launch, memory allocation, framework bookkeeping) make up a larger share of total cost, and the trainable-parameter counts involved are already tiny in absolute terms.
+Research on efficiency usually targets the opposite end of the scale. It covers scaling laws \cite{kaplan2020scaling,hoffmann2022chinchilla}, repeated versus fresh data \cite{muennighoff2023dataconstrained}, parameter-efficient fine-tuning such as LoRA \cite{hu2022lora,houlsby2019peft}, and KV caching \cite{shazeer2019multiquery,pope2022efficiently}. These techniques were developed for models with hundreds of millions to hundreds of billions of parameters, and they need not behave the same way in tiny models. When each layer does little computation, fixed overheads such as kernel launches, memory allocation, and framework bookkeeping take up a larger share of the total cost.
 
-This paper does not propose a new method. It asks a narrower empirical question: applied to TinyLMs under a controlled setup, do scaling, data repetition, LoRA, and KV caching behave the way their large-scale reputation would predict?
+This paper does not propose a new method. Instead, it asks a focused empirical question: when scaling, data repetition, LoRA, and KV caching are applied to TinyLMs under controlled conditions, do they behave as their reputation at large scale would suggest? We break this into five research questions.
 
-\textbf{RQ1 (data).} At a fixed training-token budget, how much does the amount of \emph{unique} data matter -- how costly is repeating a smaller pool?
+\textbf{RQ1 (data).} For a fixed number of training tokens, how much does the amount of \emph{unique} data matter? In other words, how costly is it to repeat a smaller pool?
 
-\textbf{RQ2 (model).} Does test loss improve monotonically from 75K to 8.8M parameters, and does a power law describe it?
+\textbf{RQ2 (model).} Does test loss improve steadily as models grow from 75K to 8.8M parameters, and can a power law describe that improvement?
 
-\textbf{RQ3 (LoRA, quality).} Matched by final architecture and parameter count, how much of full fine-tuning's gain does LoRA recover, at what trainable fraction, and with what side effects on forgetting and instruction following?
+\textbf{RQ3 (LoRA, quality).} When LoRA and full fine-tuning produce models with the same final architecture and parameter count, how much of the full fine-tuning gain does LoRA recover, and how does it affect forgetting and instruction following?
 
-\textbf{RQ4 (LoRA, speed).} Does LoRA train faster than full fine-tuning at TinyLM scale -- and if not here, where is the crossover?
+\textbf{RQ4 (LoRA, speed).} Does LoRA train faster than full fine-tuning at TinyLM scale? If it does not, at what model size does it start to?
 
-\textbf{RQ5 (KV cache).} Does KV caching give meaningful end-to-end generation speedups for TinyLMs, and how does that vary with batch size and generation length?
+\textbf{RQ5 (KV cache).} Does KV caching give a meaningful end-to-end speedup for TinyLM generation, and how does that depend on batch size and generation length?
 
-I answer these with five controlled experiments on models I train and evaluate myself, sharing a tokenizer, data splits, seeding discipline, and evaluation protocol throughout. The contribution is empirical, not algorithmic: parameter efficiency, data efficiency, training-time efficiency, and inference-time efficiency turn out to be distinct axes that do not necessarily move together at this scale. In particular, LoRA's large cut in trainable parameters does not translate into a training-time speedup below a width crossover, and KV caching's benefit is confined to long, batched generations rather than being a default win.
+All five experiments share one tokenizer, data split, seeding procedure, and evaluation protocol. Our main finding is that parameter efficiency, data efficiency, training speed, and inference speed are distinct properties at this scale. In particular, LoRA does not train faster until the model is wide enough, and KV caching helps only for long, batched generations.
 
-\section{Background}
+\section{Background and Related Work}
 
-My model follows the standard decoder-only, GPT-style design \cite{vaswani2017attention,radford2019gpt2}: token embeddings plus learned positional embeddings, $L$ Transformer blocks with causal multi-head self-attention and a position-wise feed-forward network, pre-normalization, and residual connections:
-\begin{align}
-h' &= h + \text{Attn}(\text{LN}(h)) \\
-h'' &= h' + \text{FFN}(\text{LN}(h'))
-\end{align}
-with causal, scaled dot-product attention
+Our models follow the standard decoder-only GPT design \cite{vaswani2017attention,radford2019gpt2}. Token embeddings and learned positional embeddings pass through $L$ pre-normalized blocks, each containing causal multi-head self-attention and a feed-forward network with residual connections. Attention is computed as
 \begin{equation}
 \text{Attn}(Q,K,V) = \text{softmax}\!\left(\frac{QK^\top}{\sqrt{d_k}} + M\right)V,
 \end{equation}
-where $M$ masks out future positions. The output head is tied to the input embedding table. None of this architecture is a contribution; it just establishes what I measure.
+where the mask $M$ blocks attention to future positions. The output layer shares its weights with the input embeddings. The architecture is standard and is not a contribution of this paper.
 
-\textbf{Data-constrained scaling.} Muennighoff et al.\ \cite{muennighoff2023dataconstrained} showed, for models hundreds of times larger than mine, that repeating data for up to about four epochs is nearly as valuable as fresh data, with diminishing value beyond. Experiment 1 asks whether that conclusion survives at TinyLM scale and much higher repetition counts.
+\textbf{Scaling and data.} Kaplan et al.\ \cite{kaplan2020scaling} showed that loss follows power laws in model size, data, and compute, and Hoffmann et al.\ \cite{hoffmann2022chinchilla} argued that model size and data should grow together. Muennighoff et al.\ \cite{muennighoff2023dataconstrained} found that, for models hundreds of times larger than ours, up to about four epochs of repeated data are nearly as useful as new data. All of this work operates far above our scale. The BabyLM challenge \cite{warstadt2023babylm} also studies small data and models, but it targets pretraining quality rather than efficiency trade-offs.
 
-\textbf{LoRA} \cite{hu2022lora} freezes a pretrained weight matrix $W_0 \in \mathbb{R}^{d \times k}$ and represents the update as a low-rank product $W = W_0 + \frac{\alpha}{r}BA$, with $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times k}$, and $r \ll \min(d,k)$. Only $A$ and $B$ train; $W_0$ stays fixed. Two consequences matter here. First, LoRA does not by itself reduce the computation performed through $W_0$ during the forward or backward pass -- the frozen matrix still takes part in the full matrix multiplication, and the low-rank path adds computation on top of it; whether freezing pays off in wall-clock terms is therefore a question of regime, not a property of the method (Experiments 3 and 4). Second, because the update is an additive matrix, it can be folded back into $W_0$ after training, so a LoRA-fine-tuned model can be made architecturally identical to a fully fine-tuned one -- which is what makes the comparison in Experiment 3 exact rather than approximate.
+\textbf{LoRA} \cite{hu2022lora} freezes a pretrained matrix $W_0 \in \mathbb{R}^{d \times k}$ and learns a low-rank update, $W = W_0 + \frac{\alpha}{r}BA$, with $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times k}$, and $r \ll \min(d,k)$. Two properties matter here. First, the frozen matrix still takes part in every forward pass and the low-rank path adds extra computation, so any wall-clock saving depends on the setting. Second, the update can be merged into $W_0$ after training, so a LoRA model has exactly the same architecture as a fully fine-tuned one, which allows a direct comparison. At large scale, LoRA and adapters \cite{houlsby2019peft} match full fine-tuning in quality with far fewer trainable parameters \cite{hu2022lora}. We test quality and speed separately and also measure forgetting and constraint following, which such studies rarely report.
 
-\textbf{KV caching} stores the key and value tensors from previous positions during autoregressive generation so only the newest token's key and value need computing at each step \cite{shazeer2019multiquery,pope2022efficiently}. This removes redundant computation but adds memory and bookkeeping cost, and whether the trade is worth it depends on how large the avoided computation is relative to that overhead -- the question Experiment 5 asks directly.
-
-\section{Related Work}
-
-The Transformer \cite{vaswani2017attention} and its decoder-only, GPT-style variant \cite{radford2019gpt2} underlie most modern language models, including the ones here. Kaplan et al.\ \cite{kaplan2020scaling} showed loss follows power laws in model size, data size, and compute; Hoffmann et al.\ \cite{hoffmann2022chinchilla} argued model size and data should scale together. Both operate many orders of magnitude above my setting; Experiment 2 checks whether a power law still describes a seven-point, two-orders-of-magnitude range at the bottom of the scale, and Experiment 1 probes the data side directly under a fixed token budget, complementing the data-constrained analysis of Muennighoff et al.\ \cite{muennighoff2023dataconstrained}. The BabyLM challenge \cite{warstadt2023babylm} shares the small-data, small-model setting but targets developmentally plausible pretraining quality rather than efficiency trade-offs. Adapter modules \cite{houlsby2019peft} and LoRA \cite{hu2022lora} were proposed to adapt large pretrained models without updating every parameter, motivated by the storage and deployment cost of many full fine-tuned copies; reported results at large scale show competitive quality alongside large parameter savings and, in some settings, better training throughput \cite{hu2022lora}. Experiments 3 and 4 check both halves of that trade-off separately at TinyLM scale, including a forgetting measurement and a task-specific constraint-following metric, which parameter-efficiency studies rarely report. KV caching and related ideas for serving large models efficiently are well covered elsewhere \cite{shazeer2019multiquery,pope2022efficiently}, but that literature assumes large models, long contexts, and high serving throughput -- all different from the short generations studied here. TinyStories \cite{eldan2023tinystories} showed models under ten million parameters can produce coherent short stories on a simplified corpus; I build on that setting but ask different questions, about data, capacity, adaptation, and inference efficiency rather than generation quality alone. None of this work tests scaling, repetition, LoRA, or KV caching directly at the million-parameter scale with short generations, which is the gap this paper fills empirically.
+\textbf{KV caching} stores the keys and values of earlier positions so that each generation step only computes them for the newest token \cite{shazeer2019multiquery,pope2022efficiently}. It removes repeated computation but adds memory use and bookkeeping. Serving research usually assumes large models and long contexts, whereas we study short generations from small models.
 
 \section{Experimental Setup}
+\label{sec:setup}
 
-\textbf{Data.} I use TinyStories \cite{eldan2023tinystories} and TinyStoriesInstruct. The full TinyStories train split (2,109,719 stories) tokenizes to 904.5M tokens; I carve a 10,000-story dev split (4.27M tokens) out of the official validation split and use the remaining 21,990 stories (9.17M tokens) as test. TinyStoriesInstruct contributes 294,993 training examples (153.5M tokens), 5,000 dev (2.60M), and 4,999 test examples (2.48M, the official validation split). Each Instruct example is an instruction header (\texttt{Features:}/\texttt{Words:}/\texttt{Summary:} fields, ending in \texttt{Story:}) followed by a story; the training loss is masked so only story tokens count. Every story is Unicode-normalized (NFKC), stripped of non-printable characters, whitespace-collapsed, and trimmed; nothing is truncated, filtered, or deduplicated. One known data defect: about 5.6\% of validation stories (1,229 of 21,990) contain a mangled quote sequence (\texttt{\^{a}\texteuro}) from a mis-decoding upstream in TinyStories itself; I left it in place rather than re-run the pipeline, and it visibly surfaces in some generations (Section~\ref{sec:samples}).
+\textbf{Data.} We use TinyStories \cite{eldan2023tinystories} and TinyStoriesInstruct. The TinyStories training split has 2,109,719 stories (904.5M tokens). From the official validation split, we use 10,000 stories (4.27M tokens) for development and the remaining 21,990 (9.17M tokens) for testing. TinyStoriesInstruct provides 294,993 training, 5,000 development, and 4,999 test examples (153.5M, 2.60M, and 2.48M tokens). Each Instruct example begins with a header of \texttt{Features:}, \texttt{Words:}, and \texttt{Summary:} fields ending in \texttt{Story:}, and the training loss is computed only on the story. We apply NFKC normalization, remove non-printable characters, and collapse whitespace, with no truncation, filtering, or deduplication. About 5.6\% of validation stories contain a garbled quotation sequence (\texttt{\^{a}\texteuro}) from a decoding error in the original release, which we left in place.
 
-\textbf{Tokenizer.} I trained a word-level byte-pair-encoding tokenizer \cite{sennrich2016bpe} from scratch in pure Python on 200,000 training stories: 1,022 learned tokens plus \texttt{<unk>} and \texttt{<|endoftext|>}, a 1,024-token vocabulary. Words are split on whitespace before merging, so tokens never cross word boundaries, and token IDs are assigned deterministically so every process sees the same vocabulary. This vocabulary is small next to production tokenizers (tens of thousands of tokens); I return to what that might mean in Section~\ref{sec:limitations}. The same tokenizer is used everywhere in the paper, so it is never a confound between conditions.
+\textbf{Tokenizer.} We trained a byte-pair-encoding tokenizer \cite{sennrich2016bpe} on 200,000 training stories, giving 1,022 learned tokens plus \texttt{<unk>} and \texttt{<|endoftext|>}. Tokens never cross word boundaries. Because every experiment uses this tokenizer, it cannot explain differences between conditions.
 
-\textbf{Model family.} All models share the architecture of Section II. For the model-scaling experiment I vary depth $L$ with $\text{heads} = L$ and $\text{embed\_dim} = 16L$ (head dimension fixed at 16), spanning 74,624 to 8,814,848 parameters. Experiments 1 and 3 use the 8-layer member of this family (8 heads, 128-dimensional embeddings, 1,783,040 parameters).
+\textbf{Models and training.} For model scaling we vary depth $L$ and set the number of heads to $L$ and the width to $16L$, giving 74,624 to 8,814,848 parameters. Experiments 1 and 3 use the 8-layer model (128-dimensional embeddings, 1,783,040 parameters). We train with AdamW \cite{loshchilov2019decoupled} ($\beta = (0.9, 0.95)$, weight decay 0.01 on matrices only), gradient clipping at 1.0, dropout 0.1, context length 512, and batch size 32. The learning rate warms up linearly over 5\% to 10\% of steps and then decays with a cosine schedule to 10\% of its peak. Every run is fully seeded, and a seeded epoch-based sampler ensures that runs with the same seed see identical batches. For each model size in Experiment 2 and each method in Experiment 3, we select the learning rate from a fixed grid using short development-set probes that share the same initialization and batches.
 
-\textbf{Training.} AdamW \cite{loshchilov2019decoupled} with $\beta = (0.9, 0.95)$, weight decay 0.01 applied to 2D-and-larger parameters only, gradient clipping at 1.0, dropout 0.1, context length 512, batch size 32. The learning rate follows linear warmup (5--10\% of steps) then cosine decay to 10\% of peak. Every run is fully seeded: initialization and the batch sequence both derive from the run's seed, and a seeded epoch-based sampler guarantees every window in the training pool is seen exactly once per epoch, so two runs given the same seed see byte-identical batches. Learning rates are not assumed transferable between configurations: each model size (Experiment 2) and each fine-tuning arm (Experiment 3) first runs a short dev-set probe per candidate learning rate from a fixed grid, all candidates starting from identical initialization and seeing identical batches, and trains at the winner.
+\textbf{Evaluation and timing.} We compute test loss and perplexity exactly over every non-overlapping window of a fixed initial portion of each test split: the first 2M TinyStories test tokens in Experiments 1 and 2, and the first 1M tokens of each test set in Experiment 3. Multi-seed results are reported as means with 95\% confidence intervals (3 seeds in Experiments 1 and 2, 5 in Experiment 3). All experiments ran on an NVIDIA GeForce RTX 3050 6GB Laptop GPU with PyTorch 2.5.1 (CUDA) and Python 3.11.13. Timing excludes warmup, calls \texttt{torch.cuda.synchronize()} before each clock reading, and interleaves conditions in shuffled order so that thermal or scheduling drift cannot favor any condition. We report medians over repeats. The fine-tuned checkpoints from Experiment 3 were re-evaluated in a separate process and reproduced their stored perplexities to three decimal places. Every run saves its configuration, seed, git commit, learning curve, and final metrics as JSON, and all tables and figures are generated from these files by script rather than typed by hand.
 
-\textbf{Evaluation.} Test loss and perplexity are computed exactly (every non-overlapping window, no sampling) over a fixed prefix of each test split: the first 2M of the 9.17M TinyStories test tokens for Experiments 1 and 2, and the first 1M tokens of each test set for Experiment 3. These are deterministic given a checkpoint, but they are 22--40\% of the full splits, not the whole thing -- Section~\ref{sec:limitations} is explicit about this. Multi-seed results are reported as mean $\pm$ 95\% confidence interval across seeds (3 seeds in Experiments 1--2, 5 in Experiment 3).
-
-\textbf{Hardware and timing.} Everything ran on one machine: an NVIDIA GeForce RTX 3050 6GB Laptop GPU, PyTorch 2.5.1 (CUDA), Python 3.11.13. Timed sections exclude warmup, call \texttt{torch.cuda.synchronize()} before clock reads, and interleave conditions in a shuffled order so thermal or scheduling drift cannot correlate with the condition being measured; medians over repeats are reported. Experiment 3's fine-tuned checkpoints were saved and re-evaluated in a separate process, reproducing the stored perplexities to three decimals before any sample text was generated from them.
-
-\textbf{Reproducibility.} Every run writes a JSON with its full configuration, seed, git commit, learning curve, and final metrics; every figure and table in this paper is generated from those files by script (\texttt{analysis.py}, \texttt{generate\_figures.py}), never hand-typed.
-
-\section{Experiment 1: Data Scaling at a Fixed Token Budget}
+\section{Experiment 1: Data Scaling at a Fixed Budget}
 \label{sec:exp1}
 
-How much unique data does a TinyLM actually need? I fix the training budget at 100M tokens (6,103 steps) of the 1.78M-parameter model and vary only the size of the unique pool the budget is drawn from: 2M, 8M, 32M, or 100M tokens. Smaller pools are simply repeated -- the 2M pool is seen 50 times, the 8M pool 12.5 times -- with the sampler re-shuffling each epoch. Pools are prefixes of the train file, and the learning rate is held at $3\times10^{-4}$ for all four conditions so that data amount is the only deliberate variable (a choice with consequences; see Section~\ref{sec:limitations}).
+We train the 1.78M-parameter model on 100M tokens (6,103 steps) drawn from unique pools of 2M, 8M, 32M, or 100M tokens. Smaller pools are repeated and reshuffled each epoch, so the 2M pool is seen 50 times. Each pool is taken from the start of the training file, and the learning rate is fixed at $3\times10^{-4}$ so that data is the only variable we change.
 
 \begin{table}[!t]
 \centering
-\caption{Data scaling: test perplexity at a fixed 100M-token training budget, varying how many of those tokens are unique (mean $\pm$ 95\% CI, 3 seeds).}
+\caption{Test perplexity with a fixed 100M-token budget and varying amounts of unique data (mean $\pm$ 95\% CI, 3 seeds).}
 \label{tab:data}
 \begin{tabular}{lrrr}
 \toprule
@@ -110,28 +104,21 @@ Unique tokens & Epochs & Test PPL & $\Delta$ vs.\ 100M \\
 2M   & 50.0  & $5.29 \pm 0.05$ & $+1.9\%$ \\
 8M   & 12.5  & $5.20 \pm 0.03$ & $+0.1\%$ \\
 32M  & 3.1   & $5.18 \pm 0.08$ & $-0.2\%$ \\
-100M & 1.0   & $5.19 \pm 0.03$ & --- \\
+100M & 1.0   & $5.19 \pm 0.03$ & reference \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure}[!t]
-\centering
-\includegraphics[width=\columnwidth]{results/figs/fig_e1_data_scaling.png}
-\caption{Test perplexity vs.\ unique-pool size at a fixed 100M-token budget. Points: individual seeds. The curve flattens after 8M unique tokens (12.5 epochs of repetition).}
-\label{fig:data}
-\end{figure}
+Almost all of the benefit of fresh data is present by 8M unique tokens (Table~\ref{tab:data}). Growing the pool from 2M to 8M tokens improves perplexity by 1.7\%, while growing it from 8M to 100M changes perplexity by less than the variation between seeds. Even fifty passes over 2M tokens cost only about 2\%. This agrees in direction with findings for much larger models \cite{muennighoff2023dataconstrained}, where a few epochs of repetition cost very little. Our models, however, tolerate far more repetition: at this size and training length, they come nowhere near memorizing even heavily repeated data. For RQ1, unique data helps only up to a point, after which repetition is a cheap and effective substitute.
 
-Table~\ref{tab:data} and Fig.~\ref{fig:data} show the result: nearly all of the benefit of fresh data arrives by 8M unique tokens. Going from 2M to 8M unique (50 $\to$ 12.5 epochs) improves perplexity by 1.7\%; from 8M to 100M unique (12.5 $\to$ 1 epoch) changes it by less than the seed noise. Even the extreme case -- reading the same 2M tokens fifty times -- lands within about 2\% of the full-data run. This is consistent in direction with data-constrained scaling at large model sizes \cite{muennighoff2023dataconstrained}, where a few epochs of repetition are nearly free, but the tolerance here is much higher: at this scale and for this many total steps, the model is far from memorizing even heavily repeated data, and unique data past roughly eight epochs' worth buys nothing measurable. For RQ1: at fixed compute, unique data matters up to a point and then stops; repetition is a surprisingly cheap substitute.
-
-\section{Experiment 2: Model Scaling Across Two Orders of Magnitude}
+\section{Experiment 2: Model Scaling}
 \label{sec:exp2}
 
-I train seven sizes of the model family (depth $L$, heads $L$, width $16L$) from scratch, each on a single pass over 200M tokens (12,207 steps, 22\% of the corpus), with the learning rate swept per size over $\{3\times10^{-4}, 10^{-3}, 3\times10^{-3}\}$ on short dev probes and three seeds per size.
+We train seven model sizes from scratch, each for one pass over 200M tokens (12,207 steps). For each size, the learning rate is chosen from $\{3\times10^{-4}, 10^{-3}, 3\times10^{-3}\}$, and we train three seeds.
 
 \begin{table}[!t]
 \centering
-\caption{Model scaling: test loss after one 200M-token pass (mean $\pm$ 95\% CI, 3 seeds). Perplexity computed from mean loss. Best LR per size selected on dev probes.}
+\caption{Test loss after one pass over 200M tokens (mean $\pm$ 95\% CI, 3 seeds). The learning rate for each size was selected on development probes.}
 \label{tab:scaling}
 \begin{tabular}{rrrrrr}
 \toprule
@@ -151,24 +138,24 @@ $L$ & Width & Params & Best LR & Test loss & PPL \\
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{results/figs/fig_e2_scaling_law.png}
-\caption{Test loss vs.\ parameter count (log scale), with the fitted power law $L(N) = 0.71 + 103.7\,N^{-0.37}$. Error bars: 95\% CI over 3 seeds; individual seeds plotted.}
+\caption{Test loss against parameter count (log scale) with the fitted power law $L(N) = 0.71 + 103.7\,N^{-0.37}$. Error bars show 95\% CIs over 3 seeds.}
 \label{fig:scaling}
 \end{figure}
 
-Loss falls monotonically across the whole 118x range (Table~\ref{tab:scaling}, Fig.~\ref{fig:scaling}), with no plateau and no reversal -- including between the 1.7M model this paper's other experiments are built on and its neighbors. A power law of the standard form $L(N) = E + A\,N^{-\alpha}$ \cite{kaplan2020scaling} fits the seed-averaged losses well: $E = 0.71$, $A = 103.7$, $\alpha = 0.37$. The bootstrap confidence intervals are wide (95\% CI for $\alpha$: 0.22--0.57; for $E$: 0.30--0.91), as expected for a seven-point fit, so I treat the curve as a good description of the trend rather than a precise exponent estimate. For RQ2: even at the bottom of the parameter range, and with a 1,024-token vocabulary, capacity scaling behaves the way large-scale experience says it should -- smoothly, predictably, and without any visible floor in the range tested.
+Test loss decreases with every increase in size across the full $118\times$ range, with no plateau (Table~\ref{tab:scaling}, Fig.~\ref{fig:scaling}). The standard form $L(N) = E + A\,N^{-\alpha}$ \cite{kaplan2020scaling} fits well, with $E = 0.71$, $A = 103.7$, and $\alpha = 0.37$. With only seven points, the bootstrap 95\% intervals are wide (0.22 to 0.57 for $\alpha$, 0.30 to 0.91 for $E$), so we treat the curve as a description of the trend rather than a precise exponent. For RQ2, loss improves smoothly and predictably with capacity even at the smallest sizes, with no sign of a floor.
 
-\section{Experiment 3: LoRA vs.\ Full Fine-Tuning, Matched Exactly}
+\section{Experiment 3: LoRA vs.\ Full Fine-Tuning}
 \label{sec:exp3}
 
-I take the 8-layer, 1.78M-parameter model from Experiment 2 (seed 0; TinyStories test perplexity 3.40, Instruct test perplexity 3.65 before adaptation) and adapt it to TinyStoriesInstruct -- a task with a measurable behavioral component, not just a distribution shift. Every arm trains for 1,220 steps (20M tokens, 13\% of the Instruct train split) with the loss masked to story tokens, from an identical deep copy of the base checkpoint, at a learning rate swept per arm (LoRA arms over $\{3{\times}10^{-4}, \ldots, 10^{-2}\}$, full fine-tuning over $\{3{\times}10^{-5}, \ldots, 10^{-3}\}$), with 5 seeds. LoRA wraps all four linear layers per block ($\alpha = 2r$), and after training the adapter is merged back into the base weights, so the evaluated LoRA model has \emph{exactly} the architecture and parameter count of the fully fine-tuned one. Three outcomes are measured: Instruct test perplexity, TinyStories test perplexity (a forgetting check), and a Words-constraint rate -- the fraction of 500 held-out Instruct headers whose generated story contains all three target words, where the reference stories written for those headers set a 92.8\% ceiling.
+We adapt the seed-0, 8-layer model from Experiment 2 (test perplexity 3.40 on TinyStories and 3.65 on Instruct) to TinyStoriesInstruct, a task with a measurable behavior rather than only a shift in text style. Every method trains for 1,220 steps (20M tokens) from an identical copy of the base model, with 5 seeds and a learning rate chosen per method. LoRA is applied to all four linear layers per block with $\alpha = 2r$ and merged into the base weights after training. We measure Instruct test perplexity, TinyStories test perplexity as a measure of forgetting, and a Words-constraint rate: the fraction of 500 held-out prompts whose generated story contains all three required words. Reference stories reach 92.8\% on this measure.
 
 \begin{table}[!t]
 \centering
-\caption{LoRA vs.\ full fine-tuning, adapting the 1.78M base model to TinyStoriesInstruct (means over 5 seeds; 95\% CIs are $\leq$0.002 for perplexity and $\leq$0.7pp for Words rate). Gap closed: share of the baseline$\to$full-FT perplexity gap recovered. Words ceiling (reference stories): 92.8\%.}
+\caption{LoRA vs.\ full fine-tuning on TinyStoriesInstruct (means over 5 seeds; 95\% CIs are at most 0.002 for perplexity and 0.7 points for Words). Forget: TinyStories perplexity after adaptation.}
 \label{tab:lora}
 \begin{tabular}{lrrrrr}
 \toprule
-Arm & Train.\ par.\ (\%) & PPL & Forget & Words & Time \\
+Method & Train.\ par.\ (\%) & PPL & Forget & Words & Time \\
 \midrule
 Baseline   & 0 (0\%)        & 3.650 & 3.398 & 0.0\%  & 0s \\
 LoRA $r{=}1$  & 16K (0.9\%)   & 3.287 & 3.444 & 0.6\%  & 306s \\
@@ -183,73 +170,54 @@ Full FT    & 1.78M (100\%)  & \textbf{3.201} & 3.474 & 1.4\%  & \textbf{254s} \\
 \end{tabular}
 \end{table}
 
-\begin{figure}[!t]
-\centering
-\includegraphics[width=\columnwidth]{results/figs/fig_e3_lora_vs_fullft.png}
-\caption{Instruct test perplexity vs.\ LoRA trainable-parameter count (log scale), against the no-fine-tuning and full-fine-tuning references.}
-\label{fig:lora}
-\end{figure}
+Table~\ref{tab:lora} supports four findings. First, LoRA is very effective with few parameters. Rank 1 (0.9\% of parameters) recovers 81\% of the perplexity gain of full fine-tuning, and rank 16 (14.7\%) recovers 94\%. Second, full fine-tuning reaches the lowest perplexity but forgets the most, with a TinyStories perplexity of 3.474 compared with 3.44 to 3.45 for every LoRA rank. Third, and most notably, the behavioral metric barely changes. Every method, including full fine-tuning, includes all three required words in only 0.6\% to 1.9\% of stories, far below the 92.8\% ceiling. Twenty million tokens of instruction tuning taught the models the style of the task but not how to follow explicit constraints. Differences between methods at these low rates are within noise, since each was tested on 500 prompts with one sample each. Fourth, and this motivates Experiment 4, LoRA takes longer to train than full fine-tuning at every rank (306 to 323 seconds compared with 254 seconds), even though it trains up to $109\times$ fewer parameters.
 
-\begin{figure}[!t]
-\centering
-\includegraphics[width=\columnwidth]{results/figs/fig_e3_forgetting.png}
-\caption{Forgetting check: TinyStories test perplexity after adaptation (baseline: 3.398). Full fine-tuning forgets the most; all LoRA ranks cluster slightly lower.}
-\label{fig:forget}
-\end{figure}
+The learning-rate sweeps also show a consistent pattern. The best learning rate for LoRA decreases as the rank increases, from $10^{-2}$ at ranks 1 through 8 to $10^{-3}$ at rank 64, moving toward the $3{\times}10^{-4}$ preferred by full fine-tuning. As the rank grows, LoRA behaves more like ordinary training.
 
-Four findings (Table~\ref{tab:lora}, Figs.~\ref{fig:lora} and~\ref{fig:forget}). First, LoRA works \emph{very} cheaply at this scale: rank 1 -- 0.9\% of the parameters -- already closes 81\% of the perplexity gap between not fine-tuning and full fine-tuning, and rank 16 closes 94\% with 14.7\%. Second, full fine-tuning still wins on raw perplexity (3.201) and pays for it with the most forgetting of the base distribution (3.474 vs.\ 3.44--3.45 for every LoRA rank). Third, and most striking, the behavioral metric barely moves: every arm, full fine-tuning included, satisfies all three word constraints on only 0.6--1.9\% of prompts, against a 92.8\% reference ceiling. Twenty million tokens of instruction tuning taught the models the \emph{genre} (Section~\ref{sec:samples} shows they reliably open with ``Once upon a time\ldots'' and pick up names from the summary) but not explicit constraint following; per-arm differences at this rate are within noise (500 prompts, one sample each). Fourth -- the result that motivates Experiment 4 -- LoRA is \emph{slower} in wall-clock terms than full fine-tuning at every rank (306--323s vs.\ 254s), despite training up to 109x fewer parameters. One consistent pattern in the LR sweeps is worth reporting: the preferred LoRA learning rate falls with rank, from $10^{-2}$ at ranks 1--8 to $10^{-3}$ at rank 64, approaching full fine-tuning's $3{\times}10^{-4}$ -- the larger the rank, the more the update behaves like ordinary training.
+For RQ3, LoRA offers large savings in trainable parameters and slightly reduces forgetting, full fine-tuning still achieves the best perplexity, and neither produces meaningful constraint following at this scale. Training fewer parameters also did not make training faster, which we investigate next.
 
-For RQ3: LoRA delivers extreme parameter efficiency and slightly less forgetting, full fine-tuning still takes the best perplexity, and neither produces measurable constraint-following at this scale. Fewer trainable parameters also did not mean faster training -- which deserves its own experiment.
-
-\section{Experiment 4: Where Does LoRA Actually Train Faster?}
+\section{Experiment 4: When Does LoRA Train Faster?}
 \label{sec:exp4}
 
-Experiment 3's timing result has a simple candidate explanation: at width 128, the frozen base matrices are cheap, so the gradient compute LoRA saves is small while its low-rank path adds fixed overhead on every layer. If so, the ranking should flip as width grows and matmuls dominate. I benchmark training-step time directly: 8-layer models at widths 64--1024 (0.5M--102M parameters, head dimension fixed at 64), full fine-tuning vs.\ LoRA rank 8 and rank 64, on random token batches (random weights; this measures compute, not learning). Each condition runs 50 warmup plus 200 timed steps at batch 16, repeated 5 times in shuffled interleaved order; medians over all timed steps are reported.
+A likely explanation for the timing result is that at width 128 the frozen matrices are cheap, so LoRA saves little gradient computation while its low-rank path adds a fixed cost to every layer. If so, the ranking should reverse as width grows. We time training steps for 8-layer models of width 64 to 1024 (0.5M to 102M parameters, head dimension 64), comparing full fine-tuning with LoRA at ranks 8 and 64. Since we measure computation rather than learning, we use random weights and inputs. Each condition runs 50 warmup and 200 timed steps at batch size 16 and is repeated 5 times in shuffled order.
 
 \begin{table}[!t]
 \centering
-\caption{Median training-step time by model width (8 layers, batch 16, context 512). Speedup is full-FT time divided by LoRA time.}
+\caption{Median training-step time by width (8 layers, batch size 16, context 512). Speedup is full fine-tuning time divided by LoRA time.}
 \label{tab:width}
 \begin{tabular}{rrrrrr}
 \toprule
 Width & Params & Full & LoRA $r{=}8$ & LoRA $r{=}64$ & $r{=}8$ speedup \\
 \midrule
-64   & 0.50M  & 0.108s & 0.121s & 0.127s & 0.89x \\
-128  & 1.78M  & 0.218s & 0.238s & 0.248s & 0.92x \\
-256  & 6.71M  & 0.765s & 0.742s & 0.765s & 1.03x \\
-512  & 26.0M  & 1.046s & 1.157s & 1.277s & 0.90x \\
-1024 & 102.3M & 5.040s & \textbf{2.737s} & 3.061s & \textbf{1.84x} \\
+64   & 0.50M  & 0.108s & 0.121s & 0.127s & $0.89\times$ \\
+128  & 1.78M  & 0.218s & 0.238s & 0.248s & $0.92\times$ \\
+256  & 6.71M  & 0.765s & 0.742s & 0.765s & $1.03\times$ \\
+512  & 26.0M  & 1.046s & 1.157s & 1.277s & $0.90\times$ \\
+1024 & 102.3M & 5.040s & \textbf{2.737s} & 3.061s & \boldmath$1.84\times$ \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\begin{figure}[!t]
-\centering
-\includegraphics[width=\columnwidth]{results/figs/fig_e4_train_speed.png}
-\caption{Median training-step time vs.\ model width. LoRA is slower up to width 512 and clearly faster at width 1024; the spread of points at width 1024 shows repeat-to-repeat drift on the laptop GPU.}
-\label{fig:width}
-\end{figure}
-
-Table~\ref{tab:width} and Fig.~\ref{fig:width} confirm the mechanism: LoRA is 9--12\% \emph{slower} per step at widths 64--128 (Experiment 3's regime), roughly at parity at width 256, and 1.84x (rank 8) / 1.65x (rank 64) \emph{faster} at width 1024, where the model has 102M parameters and the frozen-weight gradient savings finally outweigh the adapter overhead. Repeat-to-repeat drift is visible at the largest width (points spread between roughly 3.7s and 6.1s across repeats of full fine-tuning), consistent with thermal behavior of a laptop GPU under sustained load; the ordering of methods is stable across repeats nonetheless. For RQ4: ``LoRA trains faster'' is not a property of LoRA but of the regime -- below a width crossover it is pure overhead, above it the savings are real. At 1.78M parameters, Experiment 3's arms sit on the wrong side of that line.
+The results support this explanation (Table~\ref{tab:width}). LoRA is 9\% to 12\% slower per step at widths 64 and 128, roughly equal at 256, and about 10\% slower again at 512. At width 1024 (102M parameters), LoRA becomes $1.84\times$ faster at rank 8 and $1.65\times$ faster at rank 64, as the saved gradient computation finally outweighs the adapter cost. Timings at this width vary between repeats (3.7 to 6.1 seconds for full fine-tuning), consistent with a laptop GPU heating up, but the ordering of methods never changes. For RQ4, faster training is not a built-in property of LoRA but depends on model size, and the models in Experiment 3 are well below the crossover.
 
 \section{Experiment 5: KV-Cache Inference}
 \label{sec:exp5}
 
-I measure end-to-end generation latency for the 1.78M-parameter model shape across three generation paths implemented in the codebase: no cache (full re-forward per step), a concatenating KV cache, and a preallocated write-in-place KV cache. Generation is greedy from a random 16-token prompt (random weights; again this measures compute, not text quality), for 20--490 new tokens at batch size 1 or 16, with 10 repeats per condition, interleaved in shuffled order; medians and peak memory are recorded.
+We time generation for the 1.78M-parameter model shape with three methods: no cache (recomputing the full sequence each step), a cache that grows by concatenation, and a preallocated cache written in place. Generation is greedy from a random 16-token prompt with random weights, for 20 to 490 new tokens at batch size 1 or 16, with 10 shuffled repeats per condition.
 
 \begin{table}[!t]
 \centering
-\caption{KV-cache results at batch 16 (median of 10 repeats). Speedup: no-cache time / cached time. Peak memory for the no-cache path grows with generation length; the preallocated cache holds it constant.}
+\caption{KV-cache results at batch size 16 (median of 10 repeats). Speedup is uncached time divided by cached time.}
 \label{tab:kvcache}
 \begin{tabular}{rrrrr}
 \toprule
-Gen.\ tokens & No cache & Concat & Prealloc & Prealloc speedup \\
+Tokens & No cache & Concat & Prealloc & Prealloc speedup \\
 \midrule
-20  & 0.140s & 0.139s (1.01x) & 0.162s & 0.86x \\
-50  & 0.342s & 0.257s (1.33x) & 0.320s & 1.07x \\
-100 & 0.588s & 0.622s (0.94x) & 0.722s & 0.81x \\
-250 & 1.911s & 1.795s (1.06x) & 1.437s & 1.33x \\
-490 & 6.348s & 3.428s (1.85x) & \textbf{3.390s} & \textbf{1.87x} \\
+20  & 0.140s & 0.139s ($1.01\times$) & 0.162s & $0.86\times$ \\
+50  & 0.342s & 0.257s ($1.33\times$) & 0.320s & $1.07\times$ \\
+100 & 0.588s & 0.622s ($0.94\times$) & 0.722s & $0.81\times$ \\
+250 & 1.911s & 1.795s ($1.06\times$) & 1.437s & $1.33\times$ \\
+490 & 6.348s & 3.428s ($1.85\times$) & \textbf{3.390s} & \boldmath$1.87\times$ \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -257,68 +225,68 @@ Gen.\ tokens & No cache & Concat & Prealloc & Prealloc speedup \\
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{results/figs/fig_e5_kvcache_speedup.png}
-\caption{KV-cache speedup vs.\ generation length, two cache implementations at batch 1 (dotted) and batch 16 (solid). Values below the dashed line mean caching was slower. Short generations hover at 1.0x; the benefit appears at batch 16 with long generations.}
+\caption{KV-cache speedup against generation length at batch size 1 (dotted) and 16 (solid). Values below the dashed line mean caching was slower.}
 \label{fig:kvcache}
 \end{figure}
 
-Table~\ref{tab:kvcache} and Fig.~\ref{fig:kvcache} show a sharp regime split. Up to 100 generated tokens, caching does nothing reliably: speedups scatter around 1.0x (0.81--1.33x) and inter-quartile ranges straddle the break-even line, at both batch sizes. At batch 1 the picture stays noisy even at 490 tokens (1.20x median, with quartiles overlapping 1.0x). The clear win appears only at batch 16 with 490 generated tokens: 1.85x (concat) and 1.87x (prealloc), tightly separated from the no-cache distribution. Memory tells the same story from the other side: at batch 16 the no-cache path's peak memory grows from 30MB to 108MB as generation lengthens (each step re-runs the full prefix), while the preallocated cache holds peak memory constant at 93.4MB -- the KV tensors themselves cost only 66MB even in the largest configuration. For RQ5: at TinyLM scale KV caching is neither useless nor a default win; it is a tool for long, batched generation, exactly where the avoided attention compute finally dwarfs the per-step bookkeeping.
+Table~\ref{tab:kvcache} and Fig.~\ref{fig:kvcache} show two distinct regimes. Up to 100 tokens, caching gives no reliable benefit at either batch size, with speedups between $0.81\times$ and $1.33\times$ and interquartile ranges crossing break-even. At batch size 1, results stay noisy even at 490 tokens (median $1.20\times$). A clear benefit appears only at batch size 16 with 490 tokens, where both caches are about $1.86\times$ faster. Memory follows the same pattern: at batch size 16, uncached peak memory grows from 30MB to 108MB with generation length, because every step reprocesses the full sequence, while the preallocated cache holds it constant at 93.4MB. The cached keys and values themselves occupy only 66MB even in the largest configuration. For RQ5, KV caching is neither useless nor automatically beneficial at this scale; it pays off only for long, batched generation.
 
-\section{What the Models Actually Write}
+\section{What the Models Write}
 \label{sec:samples}
 
-Numbers miss what the failure modes look like, so I regenerated Experiment 3's seed-0 fine-tuned models (each reproduces its stored Instruct perplexity to three decimals) and sampled from every arm on the same held-out prompts (temperature 0.8, top-$k$ 50). Table~\ref{tab:samples} shows one representative prompt; the full set is in the repository.
+To see what the failures look like, we reloaded the seed-0 models from Experiment 3 (each reproduces its stored perplexity to three decimal places) and sampled from each method on held-out prompts (temperature 0.8, top-$k$ 50). Table~\ref{tab:samples} shows one representative example.
 
 \begin{table*}[!t]
 \centering
-\caption{Sample continuations for the prompt ``\texttt{Words: borrow, crystal, strong Summary: Lily accidentally breaks her friend's crystal necklace\ldots\ Story:}'' (target words \textbf{borrow, crystal, strong}). Unfiltered, one sample per arm.}
+\caption{Unfiltered samples for the prompt ``\texttt{Words: borrow, crystal, strong Summary: Lily accidentally breaks her friend's crystal necklace\ldots\ Story:}''.}
 \label{tab:samples}
-\begin{tabular}{p{2.6cm}p{13.2cm}}
+\begin{tabular}{p{2.4cm}p{13.4cm}}
 \toprule
-Arm & Generated continuation (trimmed) \\
+Method & Generated continuation (trimmed) \\
 \midrule
-No fine-tuning & ``That's important to be careful when borrows, okay?'' -- a fragment, not a story; the base model does not recognize the header format. \emph{Words used: borrow.} \\
-LoRA $r{=}64$ & ``Once upon a time, there was a little girl named Lily. She loved to play outside. One day, she went to the park\ldots\ She saw a big train\ldots\ She tried the borrow but she couldn't catch it. But it was too high. She tried to grab the borrow but it was too strong\ldots\ and she went to the park to get her crystal.'' -- all three words used, but as near-nonsense (``the borrow'' as a noun). \emph{Words used: borrow, crystal, strong.} \\
-Full fine-tuning & ``Once upon a time, there was a little girl named Lily\ldots\ she went to the park to play. She saw a big train in the park. She wanted to try it. She tried the bath too, but it was too fast. Lily tried to pull the bath too hard for her. Suddenly, the bath got stuck and it hurt her\ldots'' -- fluent, on-genre, and ignores all three target words entirely. \emph{Words used: none.} \\
+No fine-tuning & ``That's important to be careful when borrows, okay?'' A fragment; the base model does not recognize the format. \emph{Words used: borrow.} \\
+LoRA $r{=}64$ & ``Once upon a time, there was a little girl named Lily\ldots\ She tried the borrow but she couldn't catch it\ldots\ it was too strong\ldots\ and she went to the park to get her crystal.'' All three words appear, but used almost meaninglessly. \emph{Words used: all three.} \\
+Full fine-tuning & ``Once upon a time, there was a little girl named Lily\ldots\ she went to the park to play. She saw a big train\ldots'' Fluent and on-genre, but ignores the required words. \emph{Words used: none.} \\
 \bottomrule
 \end{tabular}
 \end{table*}
 
-Three qualitative observations match the metrics. First, adaptation is visibly real: every fine-tuned arm opens with ``Once upon a time\ldots'' and picks up names and objects from the prompt's summary field, which the base model never does. Second, constraint following is exactly as weak as the Words rate says -- when target words appear at all, they are often grammatically forced (``the borrow''). Third, the characteristic failure modes are repetition loops (``a picture of a picture of a picture''), stories that run past their ending into a fresh \texttt{Summary:} header, and the occasional mangled \texttt{\^{a}\texteuro} sequence inherited from the source data (Section IV).
+Three observations from the samples agree with the metrics. First, adaptation clearly works: every fine-tuned model opens with ``Once upon a time'' and reuses names and objects from the prompt's summary, which the base model never does. Second, constraint following is as weak as the Words rate suggests. When required words appear at all, they are often forced into the sentence ungrammatically, as in ``the borrow.'' Third, the most common failures are repetitive loops, stories that continue past their natural ending into a new \texttt{Summary:} header, and occasional garbled \texttt{\^{a}\texteuro} sequences inherited from the source data (Section~\ref{sec:setup}).
 
 \section{Discussion}
 
-Five experiments point at one idea: efficiency is not one thing. Parameter count, unique data, training time, inference time, memory, and model quality moved independently across these experiments, and each large-scale assumption I tested needed a regime qualifier at this scale. Data repetition, supposedly costly, was nearly free up to twelve epochs. Capacity scaling, the assumption that \emph{did} transfer cleanly, followed a smooth power law all the way down to 75K parameters. LoRA delivered its parameter savings and a small forgetting benefit, but not the training-speed benefit people casually assume -- until the model got wide enough, where the same code showed a 1.84x speedup. KV caching, built to cut inference cost, was dead weight for short single generations and a clear 1.87x win for long batched ones, with a memory-cap effect that matters more than speed on a 6GB card.
+The five experiments share a common theme: efficiency is not a single quantity. Parameter count, unique data, training time, inference time, memory, and quality changed independently, and most expectations carried over from large-scale work needed a qualification at this scale. Capacity scaling was the one expectation that transferred cleanly, following a smooth power law down to 75K parameters. Data repetition, often assumed to be costly, was nearly free up to twelve epochs. LoRA delivered its parameter savings and a small reduction in forgetting, but it trained faster only once the model was wide enough, at which point the same code ran $1.84\times$ faster. KV caching gave no benefit for short generations but a clear $1.87\times$ speedup for long, batched ones, where it also capped memory, which matters more than speed on a 6GB GPU.
 
-The LoRA width crossover and the KV-cache length crossover are the results most worth remembering, because both are cases where the folklore answer (``fewer trainable parameters means faster training''; ``caching is how you make generation fast'') is silently conditional on scale. Neither condition is exotic or hidden; both are just usually satisfied at the scales where these techniques are discussed. At TinyLM scale they are not, and the only reliable way to know is to measure.
-
-None of this is a claim that LoRA is slower in general, or that KV caching does not help small models -- only that, in this specific controlled setup, benefits usually assumed by default did not appear until the regime changed, and the regime change was measurable.
+We consider the two crossovers the most useful results. In both cases a common rule of thumb (that fewer trainable parameters make training faster, and that caching makes generation faster) quietly depends on scale, and the required conditions are usually met at the scales where these techniques are discussed. We do not claim that LoRA is slower in general or that caching never helps small models. We claim only that, in this controlled setup, these benefits appeared at measurable points rather than by default.
 
 \section{Limitations}
 \label{sec:limitations}
 
-Several limitations qualify the numbers above, and I list them rather than smooth them over. (1) Test metrics use fixed prefixes, not full splits: the first 2M of 9.17M TinyStories test tokens (Experiments 1--2) and the first 1M tokens of each test set (Experiment 3) -- 22--40\% of each split, deterministic but partial. (2) Experiment 1 logged against the test split during training rather than the dev split; nothing selected on those values (fixed learning rate, no early stopping), so the results stand, but the routing was wrong. (3) Experiment 1's pools are prefixes of the train file in the dataset's original story order, not random subsets, and its learning rate was fixed at $3{\times}10^{-4}$ rather than swept per pool size -- the flat 8M-to-100M region could in principle hide a learning-rate interaction. (4) Every number comes from one laptop-class GPU; Experiments 4 and 5 show visible repeat-to-repeat thermal drift, use random weights and random token batches (legitimate for timing, silent about learning), and fix depth at 8 layers while sweeping width. (5) The Words-constraint rate uses 500 prompts with one sample each; at success rates around 1\%, per-arm differences are noise and only the floor (0\%) and ceiling (92.8\%) are firm. (6) The Experiment 2 power law is a seven-point fit over a 118x range with wide bootstrap intervals; it describes, it does not extrapolate. (7) The 1,024-token vocabulary, the single text domain, the 512-token context, and the un-cleaned mojibake in the source data all bound how far these conclusions generalize. (8) I measured peak memory only in Experiment 5; training-time memory for LoRA vs.\ full fine-tuning remains unmeasured.
+(1) Test metrics cover a fixed initial portion of each test split (the first 2M of 9.17M TinyStories test tokens in Experiments 1 and 2, and the first 1M tokens of each test set in Experiment 3), which is 22\% to 40\% of each split. (2) Experiment 1 logged metrics on the test split instead of the development split during training. No decision used these values, since the learning rate was fixed and there was no early stopping, so the results stand. (3) Experiment 1's pools are prefixes of the training file rather than random samples, and its learning rate was not tuned per pool size, so the flat region from 8M to 100M tokens could hide an interaction with the learning rate. (4) All results come from one laptop GPU with visible thermal drift, and Experiments 4 and 5 use random weights and vary only width at a fixed depth of 8 layers. (5) The Words rate uses 500 prompts with one sample each, so differences near 1\% are noise and only the floor and ceiling are firm. (6) The power law is fitted to seven points with wide intervals and should not be extrapolated. (7) The 1,024-token vocabulary, single domain, 512-token context, and uncorrected encoding errors limit how far the conclusions generalize. (8) Training-time memory for LoRA compared with full fine-tuning was not measured.
 
 \section{Conclusion}
 
-At a fixed 100M-token budget, unique data stopped mattering past about 8M tokens; twelve epochs of repetition cost nothing measurable and fifty epochs cost 2\%. Test loss fell smoothly from 75K to 8.8M parameters along a power law with no visible floor. LoRA recovered up to 98\% of full fine-tuning's perplexity gain with a fraction of the trainable parameters and forgot less, but trained slower at this width -- the speed advantage only appears past a width crossover near 26M parameters -- and no amount of adaptation produced real constraint-following, only genre. KV caching earned its keep only for long, batched generations, where it also capped memory. Each of these is a small, bounded, measured claim; together they make one general one: efficiency techniques carry regime conditions that are usually invisible at the scale where they are proposed, and re-measuring them at the scale where they will actually run is cheap enough that there is no excuse not to. Obvious next steps are full-split evaluation, more model families and seeds, cross-hardware benchmarks, real prompt distributions for the inference measurements, and a data-cleaning pass over TinyStories.
+With a fixed budget of 100M training tokens, adding unique data beyond about 8M tokens brought no further benefit: twelve epochs of repetition had no measurable cost, and fifty epochs cost about 2\% in perplexity. Test loss decreased smoothly from 75K to 8.8M parameters along a power law, with no sign of a floor. LoRA recovered up to 98\% of the perplexity gain of full fine-tuning (at rank 64) while training a fraction of the parameters, and it forgot less. At this width, however, it trained more slowly than full fine-tuning, and its speed advantage appeared only between embedding widths 512 and 1024, in models larger than 26M parameters. No form of adaptation produced real constraint following; the models learned the genre but not the instructions. KV caching was worthwhile only for long, batched generations, where it also limited peak memory.
+
+Each of these findings is narrow and measured, but together they support a broader point. Efficiency techniques come with conditions that are often invisible at the scale where they were developed, and checking them again at the scale where they will actually be used is inexpensive enough to be worth doing. Natural next steps include evaluating on full test splits, adding more model families and seeds, benchmarking on other hardware, using realistic prompt distributions for inference, and cleaning the encoding errors in TinyStories.
 
 \begin{thebibliography}{00}
 
 \bibitem{eldan2023tinystories} R. Eldan and Y. Li, ``TinyStories: How small can language models be and still speak coherent English?'' \emph{arXiv preprint arXiv:2305.07759}, 2023.
 
-\bibitem{hoffmann2022chinchilla} J. Hoffmann, S. Borgeaud, A. Mensch, E. Buchatskaya, T. Cai, E. Rutherford, D. de Las Casas, L. A. Hendricks, J. Welbl, A. Clark, T. Hennigan, E. Noland, K. Millican, G. van den Driessche, B. Damoc, A. Guy, S. Osindero, K. Simonyan, E. Elsen, J. W. Rae, O. Vinyals, and L. Sifre, ``Training compute-optimal large language models,'' \emph{arXiv preprint arXiv:2203.15556}, 2022.
+\bibitem{hoffmann2022chinchilla} J. Hoffmann, S. Borgeaud, A. Mensch, \emph{et al.}, ``Training compute-optimal large language models,'' \emph{arXiv preprint arXiv:2203.15556}, 2022.
 
-\bibitem{houlsby2019peft} N. Houlsby, A. Giurgiu, S. Jastrzebski, B. Morrone, Q. de Laroussilhe, A. Gesmundo, M. Attariyan, and S. Gelly, ``Parameter-efficient transfer learning for NLP,'' in \emph{Proc. 36th Int. Conf. Machine Learning (ICML)}, 2019.
+\bibitem{houlsby2019peft} N. Houlsby, A. Giurgiu, S. Jastrzebski, \emph{et al.}, ``Parameter-efficient transfer learning for NLP,'' in \emph{Proc. 36th Int. Conf. Machine Learning (ICML)}, 2019.
 
-\bibitem{hu2022lora} E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, ``LoRA: Low-rank adaptation of large language models,'' in \emph{Int. Conf. Learning Representations (ICLR)}, 2022.
+\bibitem{hu2022lora} E. J. Hu, Y. Shen, P. Wallis, \emph{et al.}, ``LoRA: Low-rank adaptation of large language models,'' in \emph{Int. Conf. Learning Representations (ICLR)}, 2022.
 
-\bibitem{kaplan2020scaling} J. Kaplan, S. McCandlish, T. Henighan, T. B. Brown, B. Chess, R. Child, S. Gray, A. Radford, J. Wu, and D. Amodei, ``Scaling laws for neural language models,'' \emph{arXiv preprint arXiv:2001.08361}, 2020.
+\bibitem{kaplan2020scaling} J. Kaplan, S. McCandlish, T. Henighan, \emph{et al.}, ``Scaling laws for neural language models,'' \emph{arXiv preprint arXiv:2001.08361}, 2020.
 
 \bibitem{loshchilov2019decoupled} I. Loshchilov and F. Hutter, ``Decoupled weight decay regularization,'' in \emph{Int. Conf. Learning Representations (ICLR)}, 2019.
 
-\bibitem{muennighoff2023dataconstrained} N. Muennighoff, A. M. Rush, B. Barak, T. Le Scao, N. Tazi, A. Piktus, S. Pyysalo, T. Wolf, and C. Raffel, ``Scaling data-constrained language models,'' in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2023.
+\bibitem{muennighoff2023dataconstrained} N. Muennighoff, A. M. Rush, B. Barak, \emph{et al.}, ``Scaling data-constrained language models,'' in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2023.
 
-\bibitem{pope2022efficiently} R. Pope, S. Douglas, A. Chowdhery, J. Devlin, J. Bradbury, A. Levskaya, J. Heek, K. Xiao, S. Agrawal, and J. Dean, ``Efficiently scaling Transformer inference,'' \emph{arXiv preprint arXiv:2211.05102}, 2022.
+\bibitem{pope2022efficiently} R. Pope, S. Douglas, A. Chowdhery, \emph{et al.}, ``Efficiently scaling Transformer inference,'' \emph{arXiv preprint arXiv:2211.05102}, 2022.
 
 \bibitem{radford2019gpt2} A. Radford, J. Wu, R. Child, D. Luan, D. Amodei, and I. Sutskever, ``Language models are unsupervised multitask learners,'' OpenAI Technical Report, 2019.
 
@@ -326,9 +294,9 @@ At a fixed 100M-token budget, unique data stopped mattering past about 8M tokens
 
 \bibitem{shazeer2019multiquery} N. Shazeer, ``Fast Transformer decoding: One write-head is all you need,'' \emph{arXiv preprint arXiv:1911.02150}, 2019.
 
-\bibitem{vaswani2017attention} A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, L. Kaiser, and I. Polosukhin, ``Attention is all you need,'' in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2017.
+\bibitem{vaswani2017attention} A. Vaswani, N. Shazeer, N. Parmar, \emph{et al.}, ``Attention is all you need,'' in \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2017.
 
-\bibitem{warstadt2023babylm} A. Warstadt, A. Mueller, L. Choshen, E. Wilcox, C. Zhuang, J. Ciro, R. Mosquera, B. Paranjabe, A. Williams, T. Linzen, and R. Cotterell, ``Findings of the BabyLM challenge: Sample-efficient pretraining on developmentally plausible corpora,'' in \emph{Proc. BabyLM Challenge (CoNLL)}, 2023.
+\bibitem{warstadt2023babylm} A. Warstadt, A. Mueller, L. Choshen, \emph{et al.}, ``Findings of the BabyLM challenge: Sample-efficient pretraining on developmentally plausible corpora,'' in \emph{Proc. BabyLM Challenge (CoNLL)}, 2023.
 
 \end{thebibliography}
 
