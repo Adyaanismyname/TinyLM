@@ -1,0 +1,97 @@
+{
+ "model": {
+  "params": 51532544,
+  "config": {
+   "vocab_size": 32768,
+   "d_model": 512,
+   "n_layers": 18,
+   "n_heads": 8,
+   "n_kv_heads": 2,
+   "ffn_hidden": 1280,
+   "max_seq_len": 512,
+   "rope_theta": 10000.0,
+   "dropout": 0.0,
+   "emb_dim": 128,
+   "qk_norm": true,
+   "block_repeats": 1
+  },
+  "gpu": "Tesla T4",
+  "n_gpu": 2,
+  "precision": "fp16",
+  "kd": true,
+  "muon": true
+ },
+ "pretrain": {
+  "tokens": 983040000,
+  "steps": 15000,
+  "tokens_per_param": 19.07610072578602,
+  "wall_hours": 30.237472747630544,
+  "gpu_hours": 60.47494549526109,
+  "final_eval": {
+   "step": 15000,
+   "tokens": 983040000,
+   "t": 108853.12456655502,
+   "cosmo/ce": 2.4776442187186687,
+   "cosmo/ppl": 11.913166519903706,
+   "cosmo/bpb": 0.6664321124483183,
+   "cosmo/kl": 0.6265540461540149,
+   "cosmo/agree": 66.17127608705712,
+   "cosmo/t_ce": 2.127098033010828,
+   "cosmo/t_bpb": 0.5721428544156245,
+   "web/ce": 3.4478799896946652,
+   "web/ppl": 31.433681890803573,
+   "web/bpb": 1.0780053257396998,
+   "web/kl": 0.8457408242358585,
+   "web/agree": 60.451717165408425,
+   "web/t_ce": 2.669858678889776,
+   "web/t_bpb": 0.8347511756261607,
+   "wiki/ce": 3.7696171586670006,
+   "wiki/ppl": 43.36346033265214,
+   "wiki/bpb": 1.2703839086041893,
+   "wiki/kl": 1.0973989881077548,
+   "wiki/agree": 56.69641436798066,
+   "wiki/t_ce": 2.6853271826145466,
+   "wiki/t_bpb": 0.9049715922179401
+  },
+  "bench": {
+   "step": 15000,
+   "tokens": 983040000,
+   "t": 108846.44242215157,
+   "arc_easy": 46.5,
+   "arc_easy_norm": 45.1,
+   "hellaswag": 27.3,
+   "hellaswag_norm": 30.6,
+   "sciq": 67.353579175705,
+   "sciq_norm": 62.47288503253796,
+   "lambada_acc": 22.96476306196841,
+   "lambada_ppl": 185.26917283265078
+  },
+  "tok_s": 9887.837232247395
+ },
+ "sft": {
+  "steps": 3996,
+  "gpu_hours": 5.742775602605608,
+  "final_eval": {
+   "step": 3996,
+   "tokens": 71268660,
+   "t": 10335.356241226196,
+   "sft/ce": 1.6063056526184083,
+   "sft/kl": 0.6643727222681045
+  },
+  "bench": {
+   "step": 3996,
+   "tokens": 71268660,
+   "t": 10335.35618185997,
+   "arc_easy": 42.8,
+   "arc_easy_norm": 41.9,
+   "hellaswag": 27.8,
+   "hellaswag_norm": 29.6,
+   "sciq": 62.039045553145336,
+   "sciq_norm": 60.30368763557484,
+   "lambada_acc": 16.281895504252734,
+   "lambada_ppl": 881.832694765494
+  }
+ },
+ "baseline_10m": {},
+ "gpu_hours_total": 66.2177210978667
+}
