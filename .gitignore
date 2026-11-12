@@ -1,9 +1,35 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
+.Python
+*.egg-info/
+
+# Virtual environments
 .venv/
-.ipynb_checkpoints/
+venv/
+env/
+
+# Trained checkpoints (large binaries; regenerate with train.py / run_experiments.py)
+checkpoints/
+
+# Prepared data: memmap .bin files + tokenizer, regenerate with prepare_data.py
+# (tinystories_train.bin alone is ~1.8GB at full scale -- never commit this)
+data/
+
+# Per-run result JSONs (results/runs/e1/, e2/, ...) -- regenerate by rerunning
+# the experiment scripts. Keep results/report.md and results/figs/ (committed,
+# small, and what the paper actually cites) out of this ignore.
+results/runs/
+
+# pytest cache
+.pytest_cache/
+
+# HF datasets cache, if ever pointed at the repo
+.cache/
+
+# Logs / scratch
+*.log
+
+# OS
 .DS_Store
-weights/
-weights-*/
-*.pt
-*.bin

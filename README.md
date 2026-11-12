@@ -1,106 +1,105 @@
-# TinyLM: a 51.5M-parameter language model distilled from Qwen2.5-0.5B
+# TinyLLM
 
-A small decoder-only language model trained from scratch by knowledge distillation from [Qwen2.5-0.5B](https://huggingface.co/Qwen/Qwen2.5-0.5B), plus a **control run** with identical settings and no teacher, to measure what the teacher actually buys. Everything was trained on 2x Tesla T4 GPUs (Kaggle's free tier): 66 GPU-hours for the distilled model, 22 for the control.
+A from-scratch, decoder-only GPT-style language model with a custom BPE tokenizer, trained on [TinyStories](https://huggingface.co/datasets/roneneldan/TinyStories) and [TinyStoriesInstruct](https://huggingface.co/datasets/roneneldan/TinyStoriesInstruct). Built to run controlled experiments on questions that are well studied at large model scale but rarely tested at ~1–10M parameters:
 
-| | Weights | Chat with it |
-|---|---|---|
-| Distilled from Qwen2.5-0.5B | [adyaanahmed/Distil_50M_SLM](https://huggingface.co/adyaanahmed/Distil_50M_SLM) | `python chat.py` |
-| Control: same recipe, no teacher | [adyaanahmed/distil-50m-no-teacher](https://huggingface.co/adyaanahmed/distil-50m-no-teacher) | `hf download adyaanahmed/distil-50m-no-teacher --local-dir weights-no-teacher`, then `python chat.py --dir weights-no-teacher` |
+- **E1 — Data scaling**: at a fixed token budget, does more *unique* data beat repeating a smaller pool?
+- **E2 — Model scaling**: does more capacity help, over two orders of magnitude in parameter count?
+- **E3 — PEFT**: how does LoRA compare to full fine-tuning, matched by *final* parameter count, on a real fine-tuning task (adapting to TinyStoriesInstruct)?
+- **E4 — Training speed**: at what model width, if any, does LoRA actually train faster than full fine-tuning?
+- **E5 — KV caching**: does it speed up generation for models this small, and does a write-in-place cache change the answer?
 
-![distilled vs no teacher](results/comparison.png)
+Everything is implemented from scratch on top of PyTorch — no `transformers`, no existing tokenizer library. Full write-up, methodology, and results: [`results/report.md`](results/report.md).
 
-> **Earlier version.** This repository used to hold a different project, a 1-10M-parameter GPT trained on TinyStories with scaling, LoRA and KV-cache experiments. It is preserved under the tag [`v1-tinystories-experiments`](https://github.com/Adyaanismyname/TinyLM/tree/v1-tinystories-experiments).
+## What's here
 
-## Results
-
-Both models: 51,532,544 parameters, 983M training tokens (19 per parameter), same data in the same order, same seed, optimiser and schedule. The only difference is the loss.
-
-Held-out bits per byte (lower is better; comparable across tokenizers):
-
-| Set | Distilled | No teacher | Teacher (Qwen2.5-0.5B) |
-|---|---|---|---|
-| Cosmopedia (training domain) | 0.666 | **0.655** | 0.572 |
-| FineWeb-Edu | **1.078** | 1.117 | 0.835 |
-| WikiText (out of domain) | **1.270** | 1.325 | 0.905 |
-
-Zero-shot benchmarks, base models, 1,000 items each (about ±1.5 points of noise):
-
-| | Distilled | No teacher |
-|---|---|---|
-| ARC-Easy (acc_norm) | **45.1** | 42.8 |
-| SciQ (acc) | **67.4** | 62.8 |
-| HellaSwag (acc_norm) | **30.6** | 28.4 |
-| LAMBADA (acc) | **23.0** | 20.9 |
-| Pretraining cost, T4 GPU-hours | 60.5 | **20.0** |
-
-What this shows:
-
-- The teacher helps most on text the model was not trained on, and the distilled model is ahead on all four benchmarks. Only the SciQ gap clearly exceeds the evaluation noise.
-- On the training domain it is a near tie: the distilled model led for most of training and the no-teacher model passed it during the final learning-rate decay.
-- The price is about 3x the compute per token, because every step also runs the teacher.
-- One run per arm: there is no seed-to-seed variance estimate, so read the smaller gaps as indicative.
-
-The instruction-tuned versions and full numbers are in [`results/`](results/) (`report_*.json`, training curves).
-
-## The model
-
-| | |
+| File | What it is |
 |---|---|
-| Architecture | 18 layers, d_model 512, grouped-query attention (8 query / 2 KV heads, head dim 64) with per-head QK-norm, SwiGLU (hidden 1280), RoPE, RMSNorm, 512-token context |
-| Embeddings | 32,768-token vocabulary (the 32,767 most useful Qwen2.5 tokens + UNK), factorised and tied: 32,768 x 128 projected to 512 |
-| Size | 51.5M parameters (47.2M in the blocks), 99 MB in fp16, about 0.1 GFLOPs per token, 9 KB of KV cache per token |
-| Distillation loss | 0.7 x KL(teacher ‖ student) + 0.3 x cross-entropy, computed over the student's vocabulary subset |
-| Optimiser | Muon for the 2-D block weights, AdamW for the rest; lr 1.5e-3, warmup-stable-decay schedule; fp16 with loss scaling |
-| Data | ~1.02B tokens: Cosmopedia v2 (64%) and FineWeb-Edu with educational score >= 3 (36%) |
-| Instruction tuning | 150k smol-smoltalk first exchanges (about 130k kept), distilled from Qwen2.5-0.5B-Instruct (control: plain cross-entropy) |
-| Training setup | 15,000 steps x 65,536 tokens, 2-GPU DDP, resumable checkpoints across 12-hour Kaggle sessions |
+| `BPE.py` | From-scratch, word-level byte-pair-encoding tokenizer (training + encode/decode), with a per-word cache and deterministic token IDs |
+| `dataset.py` | Loads + preprocesses TinyStories and TinyStoriesInstruct into plain Python structures (no tokenizer dependency) |
+| `prepare_data.py` | One-time pipeline: downloads both datasets, trains the tokenizer, writes memmap `.bin` files + `tokenizer.json` under `data/` |
+| `data.py` | `TokenStream`/`EpochBatcher` — seeded, epoch-based batch sampling over memmap or in-memory token streams, with optional per-token loss masking |
+| `model.py` | The GPT model — causal self-attention (manual or `scaled_dot_product_attention`), pre-norm blocks, weight tying, and three interchangeable generation paths (no cache, growing cache, preallocated cache) |
+| `lora.py` | LoRA (`LoRALinear`) plus `merge_lora`, which folds a trained adapter back into plain weights so a LoRA-fine-tuned model has the same architecture as a fully fine-tuned one |
+| `train.py` | Core training loop (`train_model`) — seeding, warmup+cosine LR schedule, gradient clipping — reused by every experiment script |
+| `metrics.py` | Evaluation: perplexity/BPC (optionally loss-masked), top-k accuracy, the Words-constraint-rate metric, generation latency, and peak-memory helpers |
+| `run_experiments.py` | Entry points for E1/E2/E3 (`python3 run_experiments.py e1\|e2\|e3 [--quick]`) |
+| `bench_train.py` | E4: standalone LoRA-vs-full-fine-tuning training-speed benchmark |
+| `bench_kvcache.py` | E5: standalone KV-cache latency/memory benchmark across cache implementations |
+| `generate.py` | Generate text from any saved checkpoint (`python generate.py --checkpoint ... --prompt "..."`) |
+| `generate_samples.py` | Recreates E3's seed-0 fine-tuned models and writes side-by-side sample stories to `results/samples/` |
+| `analysis.py` | Aggregates per-run JSONs into means + 95% CIs and fits E2's power law |
+| `generate_figures.py` | Renders the figures in `results/figs/` from `results/runs/` |
+| `tests/` | pytest suite covering the tokenizer, dataloader, model, LoRA merging, training, metrics, and each pipeline script end-to-end at small scale |
 
-## Try it
+## Setup
 
 ```bash
 pip install -r requirements.txt
-hf download adyaanahmed/Distil_50M_SLM --local-dir weights
-python chat.py                       # instruction-tuned model (single-turn)
-python chat.py --model pretrained    # raw text continuation
 ```
 
-(`huggingface-cli download` works too.) Inside the chat: `/temp 0.4`, `/topk 40`, `/rep 1.15`, `/len 200`. Runs on CPU at roughly 20-30 tokens per second (there is no KV cache in the sampling loop). The first run downloads the Qwen2.5 tokenizer.
+Requires Python 3.10+. Tested on PyTorch 2.5 with CUDA (RTX 3050) and on Apple Silicon (MPS); also works on CPU.
 
-This is a 51M-parameter model. It writes fluent, well-formatted text but **invents facts and cannot do arithmetic**; do not rely on it for anything that matters.
+## Usage
 
-## Reproduce the training
+Run the test suite (fast — small synthetic/tiny-real-data cases, not the real experiments):
 
-The notebooks are self-contained: they write the code in [`hybrid50m/`](hybrid50m/) to disk and drive it. They are meant for Kaggle (GPU T4 x2, internet on).
-
-1. Upload [`notebooks/distill_distilled.ipynb`](notebooks/distill_distilled.ipynb) to Kaggle. Set `RUN_MODE = "data"` in the config cell, then *Save Version, Save & Run All*. This downloads and tokenises the corpora and writes the training data. Save its output as a Kaggle dataset.
-2. Create a new session with that dataset attached and `RUN_MODE = "pretrain"`. Pretraining resumes from its checkpoint and stops cleanly before Kaggle's 12-hour limit; for later sessions attach the previous session's output (as a dataset) as well and run again. About 30 hours in total across several sessions. When pretraining is done the same notebook continues into instruction tuning and exports the models, a report and training curves.
-3. For the control run use [`notebooks/distill_no_teacher.ipynb`](notebooks/distill_no_teacher.ipynb) (about 10 hours, one session). It is identical except `KD = False` and `SFT_ALPHA = 0`. **Do not attach the distilled run's checkpoints to it**; the notebook restores any checkpoint it finds in its inputs.
-
-`RUN_MODE = "smoke"` (the default) runs a few-minute end-to-end check on tiny data, and `"pilot"` compares training setups for equal wall-clock time.
-
-## Repository layout
-
-```
-hybrid50m/        model.py   the student (GQA, QK-norm, SwiGLU, RoPE, factorised tied embedding)
-                  optim.py   Muon + AdamW
-                  core.py    vocabulary map, teacher wrapper, KD loss, evaluation, benchmarks, checkpoints, export
-                  data.py    corpus download, tokenisation, vocabulary selection, SFT data
-                  train.py   pretraining / pilot / SFT stages (single process or torchrun DDP)
-                  selftest.py  unit checks (causality, optimiser parity, schedule, sampler resume, bits-per-byte)
-notebooks/        the two Kaggle notebooks (distilled run, no-teacher control)
-results/          reports, training curves and the comparison figure
-chat.py           local chat with the exported weights
+```bash
+python3 -m pytest tests/
 ```
 
-Run the self-tests with `cd hybrid50m && python selftest.py`.
+Prepare the data once (downloads TinyStories + TinyStoriesInstruct, trains the tokenizer, writes `data/*.bin`):
 
-## Limitations
+```bash
+python3 prepare_data.py
+```
 
-- Single-turn, 512-token context, English only; no safety tuning.
-- Long answers can drift or loop; a repetition penalty of about 1.15 and temperature 0.4-0.6 help.
-- Benchmark differences below about 1.5 points are within noise at 1,000 items.
-- One training run per configuration.
+This is a long-running job (the full TinyStories train split alone encodes to ~900M tokens) — run it in the background. Use `--tinystories-train-limit N` etc. for a fast, small-scale smoke test.
 
-## Acknowledgements and licence
+Run an experiment. Always try `--quick` first on a machine you haven't run this on before — it exercises the whole pipeline (LR selection, multi-seed training, evaluation, JSON output) in well under a minute:
 
-Code: Apache-2.0 (see [LICENSE](LICENSE)). The weights are Apache-2.0 too. The teachers are Qwen2.5-0.5B and Qwen2.5-0.5B-Instruct (Apache-2.0); the data are Cosmopedia v2 and smol-smoltalk (Apache-2.0) and FineWeb-Edu (ODC-By 1.0). The architecture follows the deep-and-narrow recipe of MobileLLM, and the optimiser is Muon. Thanks to the Qwen team and Hugging Face for the models and datasets.
+```bash
+python3 run_experiments.py e1 --quick   # then, for real: python3 run_experiments.py e1
+python3 run_experiments.py e2 --quick
+python3 run_experiments.py e3 --quick   # needs e2's layers=8 checkpoint, or trains a tiny one itself in --quick
+```
+
+Run the training-speed and KV-cache benchmarks (do this separately on every machine/backend you want compared — that's the point of E4/E5):
+
+```bash
+python3 bench_train.py --quick     # then: python3 bench_train.py
+python3 bench_kvcache.py --quick   # then: python3 bench_kvcache.py
+```
+
+Regenerate the figures from whatever's in `results/runs/`:
+
+```bash
+python3 generate_figures.py
+```
+
+See what the models actually write. `run_experiments.py` reports numbers only (and saves just the 8-layer E2 base model), so `generate_samples.py` rebuilds the E3 seed-0 models — same learning rate, steps and data order, checked against the stored perplexities — and generates from each on the same prompts:
+
+```bash
+python3 generate.py --checkpoint checkpoints/e2_base_layers8_seed0.pt --prompt "Once upon a time" -n 3
+python3 generate_samples.py        # ~20 min: re-fine-tunes 4 arms, writes results/samples/samples.md
+```
+
+Evaluate a trained checkpoint:
+
+```bash
+python3 metrics.py                 # full report
+python3 metrics.py --kv-cache      # KV-cache latency comparison only
+```
+
+## Results
+
+The full results, aggregated from `results/runs/*/*.json` (means + 95% CIs over seeds, E2 power-law fit), are in [`results/report.md`](results/report.md); the paper-length write-up is [`tinyLmPaper.latex`](tinyLmPaper.latex). Headlines:
+
+- **E1 (data):** at a fixed 100M-token budget, unique data past ~8M tokens (12.5 epochs of repetition) buys nothing measurable; even 50 epochs of repetition costs only ~2% perplexity.
+- **E2 (model):** test loss falls monotonically from 75K to 8.8M parameters, well fit by $L = 0.71 + 103.7\,N^{-0.37}$.
+- **E3 (LoRA vs. full FT):** LoRA r16 closes ~94% of the perplexity gap with 14.7% of the trainable parameters and forgets less; no arm learns explicit word-constraint following (≤1.9% vs. a 92.8% reference ceiling); LoRA trains ~20–27% slower at this width.
+- **E4 (speed crossover):** LoRA is slower per step below ~width 512 and 1.84x faster at width 1024 (102M params).
+- **E5 (KV cache):** no reliable speedup ≤100 generated tokens or at batch 1; 1.85–1.87x at batch 16 with 490 tokens, where a preallocated cache also caps peak memory.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
